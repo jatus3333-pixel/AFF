@@ -76,9 +76,9 @@ class HSLBot(commands.Bot):
         print("✅ ai.py loaded", flush=True)
            
         guild_ids = [
-            1519933809402056805,  # Server 1
-            1435943252455981080,
-            1531880443383906426,   # Server 3
+            1435943252455981080,  # Server 1
+            
+               
         ]
 
         for guild_id in guild_ids:
