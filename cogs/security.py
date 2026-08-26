@@ -49,6 +49,7 @@ DEFAULT_SETTINGS = {
     "antispam": True,
     "duplicate": True,
     "antigali": True,
+    "whitelist_gali": [],
     "whitelist_music": [],
     "whitelist_bots": [],
 }
@@ -289,6 +290,48 @@ class Security(commands.Cog):
         if cleaned_music != settings["whitelist_music"]:
 
             settings["whitelist_music"] = cleaned_music
+
+            changed = True
+
+        # ====================================================
+        # GALI WHITELIST NORMALIZE
+        # ====================================================
+
+        if not isinstance(
+            settings.get("whitelist_gali"),
+            list
+        ):
+
+            settings["whitelist_gali"] = []
+
+            changed = True
+
+        cleaned_gali_whitelist = []
+
+        for user_id in settings["whitelist_gali"]:
+
+            try:
+
+                cleaned_gali_whitelist.append(
+                    int(user_id)
+                )
+
+            except (
+                TypeError,
+                ValueError
+            ):
+
+                changed = True
+
+        cleaned_gali_whitelist = list(
+            dict.fromkeys(
+                cleaned_gali_whitelist
+            )
+        )
+
+        if cleaned_gali_whitelist != settings["whitelist_gali"]:
+
+            settings["whitelist_gali"] = cleaned_gali_whitelist
 
             changed = True
 
@@ -1471,6 +1514,266 @@ class Security(commands.Cog):
 
 
     # ========================================================
+    # GALI MEMBER WHITELIST
+    # ========================================================
+
+    @commands.hybrid_command(
+        name="whitelistgali",
+        description="Manage Anti-Gali member whitelist"
+    )
+    @commands.guild_only()
+    async def whitelistgali(
+        self,
+        ctx,
+        member: discord.Member = None,
+        action: str = "toggle"
+    ):
+
+        if not await self.is_owner(
+            ctx.author
+        ):
+
+            return await self.owner_only_message(
+                ctx
+            )
+
+        settings = self.get_settings(
+            ctx.guild.id
+        )
+
+        users = settings.setdefault(
+            "whitelist_gali",
+            []
+        )
+
+        normalized_users = []
+
+        for user_id in users:
+
+            try:
+
+                normalized_users.append(
+                    int(user_id)
+                )
+
+            except (
+                TypeError,
+                ValueError
+            ):
+
+                pass
+
+        settings["whitelist_gali"] = list(
+            dict.fromkeys(
+                normalized_users
+            )
+        )
+
+        users = settings["whitelist_gali"]
+
+        # /whitelistgali -> show current whitelist
+
+        if member is None:
+
+            if not users:
+
+                embed = discord.Embed(
+                    title="🤬 HSL-CORP GALI WHITELIST",
+                    description=(
+                        "No members are currently "
+                        "whitelisted for Anti-Gali."
+                    ),
+                    color=discord.Color.orange()
+                )
+
+                embed.set_footer(
+                    text="Only Anti-Gali is bypassed."
+                )
+
+                return await ctx.send(
+                    embed=embed
+                )
+
+            lines = []
+
+            for index, user_id in enumerate(
+                users,
+                start=1
+            ):
+
+                guild_member = ctx.guild.get_member(
+                    user_id
+                )
+
+                if guild_member:
+
+                    lines.append(
+                        f"**{index}.** "
+                        f"{guild_member.mention} "
+                        f"`{guild_member.id}`"
+                    )
+
+                else:
+
+                    lines.append(
+                        f"**{index}.** "
+                        f"<@{user_id}> "
+                        f"`{user_id}`"
+                    )
+
+            embed = discord.Embed(
+                title="🤬 HSL-CORP GALI WHITELIST",
+                description="\n".join(lines),
+                color=discord.Color.green()
+            )
+
+            embed.add_field(
+                name="Permission",
+                value=(
+                    "Whitelisted members can use blocked "
+                    "gali words without Anti-Gali action."
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="Other Security",
+                value="Unaffected",
+                inline=True
+            )
+
+            return await ctx.send(
+                embed=embed
+            )
+
+        action = str(
+            action
+        ).lower().strip()
+
+        if action not in (
+            "add",
+            "remove",
+            "delete",
+            "del",
+            "off",
+            "disable",
+            "on",
+            "enable",
+            "toggle"
+        ):
+
+            return await ctx.send(
+                "❌ Invalid action.\n\n"
+                "`/whitelistgali @User`\n"
+                "`/whitelistgali @User add`\n"
+                "`/whitelistgali @User remove`",
+                delete_after=8
+            )
+
+        if action in (
+            "remove",
+            "delete",
+            "del",
+            "off",
+            "disable"
+        ):
+
+            if member.id not in users:
+
+                return await ctx.send(
+                    f"🟡 {member.mention} "
+                    "**Gali whitelist mein nahi hai.**",
+                    delete_after=5
+                )
+
+            users.remove(
+                member.id
+            )
+
+            settings["whitelist_gali"] = users
+
+            save_data(
+                self.data
+            )
+
+            return await ctx.send(
+                f"🔴 {member.mention} "
+                "**Gali whitelist se remove ho gaya.**\n"
+                "❌ Ab Anti-Gali is member par normally apply hoga.",
+                delete_after=7
+            )
+
+        if action in (
+            "add",
+            "on",
+            "enable"
+        ):
+
+            if member.id in users:
+
+                return await ctx.send(
+                    f"🟢 {member.mention} "
+                    "**already Gali whitelist mein hai.**",
+                    delete_after=5
+                )
+
+            users.append(
+                member.id
+            )
+
+            settings["whitelist_gali"] = users
+
+            save_data(
+                self.data
+            )
+
+            return await ctx.send(
+                f"🟢 {member.mention} "
+                "**Gali whitelist mein add ho gaya.**\n"
+                "🤬 Ab ye member blocked gali words use kar sakta hai.\n"
+                "🛡️ Baaki security systems par koi effect nahi.",
+                delete_after=8
+            )
+
+        # Toggle
+
+        if member.id in users:
+
+            users.remove(
+                member.id
+            )
+
+            settings["whitelist_gali"] = users
+
+            save_data(
+                self.data
+            )
+
+            return await ctx.send(
+                f"🔴 {member.mention} "
+                "**Gali whitelist se remove ho gaya.**",
+                delete_after=6
+            )
+
+        users.append(
+            member.id
+        )
+
+        settings["whitelist_gali"] = users
+
+        save_data(
+            self.data
+        )
+
+        await ctx.send(
+            f"🟢 {member.mention} "
+            "**Gali whitelist mein add ho gaya.**\n"
+            "🤬 Ab sirf Anti-Gali bypass hoga.",
+            delete_after=8
+        )
+
+
+    # ========================================================
     # WHITELIST BOT
     # ========================================================
 
@@ -2415,6 +2718,54 @@ class Security(commands.Cog):
 
 
     # ========================================================
+    # GALI MEMBER WHITELIST CHECK
+    # ========================================================
+
+    def gali_whitelisted(
+        self,
+        guild_id,
+        user_id
+    ):
+
+        settings = self.get_settings(
+            guild_id
+        )
+
+        whitelist = settings.get(
+            "whitelist_gali",
+            []
+        )
+
+        try:
+
+            user_id = int(user_id)
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            return False
+
+        for allowed_id in whitelist:
+
+            try:
+
+                if int(allowed_id) == user_id:
+
+                    return True
+
+            except (
+                TypeError,
+                ValueError
+            ):
+
+                continue
+
+        return False
+
+
+    # ========================================================
     # GALI OWNER BYPASS
     # ========================================================
 
@@ -2422,6 +2773,16 @@ class Security(commands.Cog):
         self,
         member
     ):
+
+        # Gali whitelist ONLY bypasses Anti-Gali.
+        # It does NOT bypass Anti-Link, Anti-Spam,
+        # Anti-Nuke, Anti-Mod, Duplicate, etc.
+
+        if self.gali_whitelisted(
+            member.guild.id,
+            member.id
+        ):
+            return True
 
         if member.id == member.guild.owner_id:
             return True
@@ -2943,6 +3304,10 @@ class Security(commands.Cog):
 
         print(
             "🤬 Anti-Gali"
+        )
+
+        print(
+            "🤬 Gali Member Whitelist"
         )
 
         print(
