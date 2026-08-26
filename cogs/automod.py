@@ -2,7 +2,6 @@ import re
 import time
 import json
 import os
-
 from collections import defaultdict, deque
 from datetime import timedelta
 
@@ -12,7 +11,7 @@ from discord.ext import commands
 
 
 # =========================================================
-# FILE
+# FILES
 # =========================================================
 
 WHITELIST_FILE = "gali_whitelist.json"
@@ -27,45 +26,46 @@ class AutoMod(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        # =================================================
+        # -------------------------------------------------
         # MEMORY
-        # =================================================
+        # -------------------------------------------------
 
-        # Guild + User -> timestamps
         self.message_history = defaultdict(
             lambda: deque(maxlen=20)
         )
 
-        # Guild + User -> last message
         self.last_messages = {}
 
-        # Guild + User -> duplicate count
         self.duplicate_counts = defaultdict(int)
 
-        # =================================================
+        # -------------------------------------------------
         # SETTINGS
-        # =================================================
+        # -------------------------------------------------
 
         self.settings = defaultdict(
             lambda: {
                 "links": True,
                 "spam": True,
                 "duplicates": True,
-                "badwords": True
+                "badwords": True,
             }
         )
 
-        # =================================================
+        # -------------------------------------------------
         # GALI WHITELIST
-        # =================================================
+        #
+        # {
+        #     "guild_id": [user_id, user_id]
+        # }
+        # -------------------------------------------------
 
         self.gali_whitelist = {}
 
         self.load_gali_whitelist()
 
-        # =================================================
+        # -------------------------------------------------
         # LINK REGEX
-        # =================================================
+        # -------------------------------------------------
 
         self.link_pattern = re.compile(
             r"(https?://\S+|"
@@ -76,9 +76,9 @@ class AutoMod(commands.Cog):
             re.IGNORECASE
         )
 
-        # =================================================
+        # -------------------------------------------------
         # BAD WORDS
-        # =================================================
+        # -------------------------------------------------
 
         self.bad_words = {
             "mc",
@@ -108,12 +108,12 @@ class AutoMod(commands.Cog):
             "sex",
             "radn",
             "randdd",
-            "pussy"
+            "pussy",
         }
 
-        # =================================================
+        # -------------------------------------------------
         # LIMITS
-        # =================================================
+        # -------------------------------------------------
 
         self.max_messages = 5
         self.time_window = 5
@@ -122,8 +122,10 @@ class AutoMod(commands.Cog):
 
         self.automod_timeout_minutes = 10
 
+        print("🛡️ AutoMod initialized", flush=True)
+
     # =====================================================
-    # LOAD WHITELIST
+    # WHITELIST LOAD
     # =====================================================
 
     def load_gali_whitelist(self):
@@ -131,9 +133,7 @@ class AutoMod(commands.Cog):
         try:
 
             if not os.path.exists(WHITELIST_FILE):
-
                 self.gali_whitelist = {}
-
                 return
 
             with open(
@@ -146,9 +146,16 @@ class AutoMod(commands.Cog):
 
             self.gali_whitelist = {}
 
+            if not isinstance(data, dict):
+                self.gali_whitelist = {}
+                return
+
             for guild_id, users in data.items():
 
                 try:
+
+                    if not isinstance(users, list):
+                        users = []
 
                     self.gali_whitelist[str(guild_id)] = [
                         int(user_id)
@@ -161,19 +168,21 @@ class AutoMod(commands.Cog):
 
             print(
                 "[AUTOMOD] Loaded gali whitelist: "
-                f"{len(self.gali_whitelist)} server(s)"
+                f"{len(self.gali_whitelist)} server(s)",
+                flush=True
             )
 
         except Exception as e:
 
             print(
-                f"[AUTOMOD] Whitelist load error: {e}"
+                f"[AUTOMOD] Whitelist load error: {e}",
+                flush=True
             )
 
             self.gali_whitelist = {}
 
     # =====================================================
-    # SAVE WHITELIST
+    # WHITELIST SAVE
     # =====================================================
 
     def save_gali_whitelist(self):
@@ -195,11 +204,12 @@ class AutoMod(commands.Cog):
         except Exception as e:
 
             print(
-                f"[AUTOMOD] Whitelist save error: {e}"
+                f"[AUTOMOD] Whitelist save error: {e}",
+                flush=True
             )
 
     # =====================================================
-    # CHECK WHITELIST
+    # CHECK GALI WHITELIST
     # =====================================================
 
     def is_gali_whitelisted(
@@ -208,15 +218,15 @@ class AutoMod(commands.Cog):
         user_id: int
     ):
 
-        users = self.gali_whitelist.get(
+        guild_users = self.gali_whitelist.get(
             str(guild_id),
             []
         )
 
-        return int(user_id) in users
+        return int(user_id) in guild_users
 
     # =====================================================
-    # ADD WHITELIST
+    # ADD GALI WHITELIST
     # =====================================================
 
     def add_gali_whitelist(
@@ -229,11 +239,9 @@ class AutoMod(commands.Cog):
         user_id = int(user_id)
 
         if guild_id not in self.gali_whitelist:
-
             self.gali_whitelist[guild_id] = []
 
         if user_id in self.gali_whitelist[guild_id]:
-
             return False
 
         self.gali_whitelist[guild_id].append(user_id)
@@ -243,7 +251,7 @@ class AutoMod(commands.Cog):
         return True
 
     # =====================================================
-    # REMOVE WHITELIST
+    # REMOVE GALI WHITELIST
     # =====================================================
 
     def remove_gali_whitelist(
@@ -256,17 +264,14 @@ class AutoMod(commands.Cog):
         user_id = int(user_id)
 
         if guild_id not in self.gali_whitelist:
-
             return False
 
         if user_id not in self.gali_whitelist[guild_id]:
-
             return False
 
         self.gali_whitelist[guild_id].remove(user_id)
 
         if not self.gali_whitelist[guild_id]:
-
             del self.gali_whitelist[guild_id]
 
         self.save_gali_whitelist()
@@ -301,7 +306,6 @@ class AutoMod(commands.Cog):
 
             # Never timeout server owner
             if member.guild.owner_id == member.id:
-
                 return False
 
             await member.timeout(
@@ -317,7 +321,8 @@ class AutoMod(commands.Cog):
 
             print(
                 "[AUTOMOD] Cannot timeout "
-                f"{member} - permissions/role hierarchy."
+                f"{member} - permissions/role hierarchy.",
+                flush=True
             )
 
             return False
@@ -325,7 +330,8 @@ class AutoMod(commands.Cog):
         except discord.HTTPException as e:
 
             print(
-                f"[AUTOMOD] Discord timeout error: {e}"
+                f"[AUTOMOD] Discord timeout error: {e}",
+                flush=True
             )
 
             return False
@@ -333,7 +339,8 @@ class AutoMod(commands.Cog):
         except Exception as e:
 
             print(
-                f"[AUTOMOD] Timeout error: {e}"
+                f"[AUTOMOD] Timeout error: {e}",
+                flush=True
             )
 
             return False
@@ -362,7 +369,7 @@ class AutoMod(commands.Cog):
         return embed
 
     # =====================================================
-    # SECURITY ALERT
+    # SEND SECURITY ALERT
     # =====================================================
 
     async def send_security_alert(
@@ -388,7 +395,8 @@ class AutoMod(commands.Cog):
         except Exception as e:
 
             print(
-                f"[AUTOMOD] Alert error: {e}"
+                f"[AUTOMOD] Alert error: {e}",
+                flush=True
             )
 
     # =====================================================
@@ -442,11 +450,19 @@ class AutoMod(commands.Cog):
 
                 print(
                     "[AUTOMOD] Database load error: "
-                    f"{e}"
+                    f"{e}",
+                    flush=True
                 )
 
-        print("💾 AutoMod settings loaded")
-        print("🛡️ Gali whitelist system loaded")
+        print(
+            "💾 AutoMod settings loaded",
+            flush=True
+        )
+
+        print(
+            "🛡️ Gali whitelist system loaded",
+            flush=True
+        )
 
     # =====================================================
     # MESSAGE LISTENER
@@ -458,28 +474,25 @@ class AutoMod(commands.Cog):
         message: discord.Message
     ):
 
-        # =================================================
+        # -------------------------------------------------
         # IGNORE BOTS
-        # =================================================
+        # -------------------------------------------------
 
         if message.author.bot:
-
             return
 
-        # =================================================
+        # -------------------------------------------------
         # IGNORE DMS
-        # =================================================
+        # -------------------------------------------------
 
         if message.guild is None:
-
             return
 
-        # =================================================
+        # -------------------------------------------------
         # SERVER OWNER BYPASS
-        # =================================================
+        # -------------------------------------------------
 
         if self.is_server_owner(message):
-
             return
 
         guild_id = message.guild.id
@@ -535,7 +548,6 @@ class AutoMod(commands.Cog):
                         )
 
                     except Exception:
-
                         pass
 
                     await self.send_security_alert(
@@ -570,7 +582,9 @@ class AutoMod(commands.Cog):
 
                     pattern = (
                         r"(?<!\w)"
-                        + re.escape(word.lower())
+                        + re.escape(
+                            word.lower()
+                        )
                         + r"(?!\w)"
                     )
 
@@ -581,12 +595,11 @@ class AutoMod(commands.Cog):
                     ):
 
                         found_word = word
-
                         break
 
-                # =========================================
+                # -----------------------------------------
                 # BADWORD FOUND
-                # =========================================
+                # -----------------------------------------
 
                 if found_word is not None:
 
@@ -628,7 +641,6 @@ class AutoMod(commands.Cog):
                             )
 
                         except Exception:
-
                             pass
 
                         await self.send_security_alert(
@@ -651,7 +663,6 @@ class AutoMod(commands.Cog):
                             )
 
                         except Exception:
-
                             pass
 
                     return
@@ -722,7 +733,6 @@ class AutoMod(commands.Cog):
                         )
 
                     except Exception:
-
                         pass
 
                     await self.send_security_alert(
@@ -806,7 +816,6 @@ class AutoMod(commands.Cog):
                             )
 
                         except Exception:
-
                             pass
 
                         await self.send_security_alert(
@@ -838,17 +847,17 @@ class AutoMod(commands.Cog):
         name="whitelistgali",
         description=(
             "Allow a member to use bad words "
-            "without AutoMod punishment"
+            "without Anti-Gali punishment"
         )
-    )
-    @app_commands.checks.has_permissions(
-        administrator=True
     )
     @app_commands.describe(
         member=(
             "Member who should be allowed "
             "to use bad words"
         )
+    )
+    @app_commands.checks.has_permissions(
+        administrator=True
     )
     async def whitelistgali(
         self,
@@ -876,8 +885,7 @@ class AutoMod(commands.Cog):
                 (
                     f"✅ {member.mention} ko "
                     "**Gali Whitelist** kar diya.\n\n"
-                    "🤬 Ab Anti-Badword uski gali "
-                    "delete nahi karega.\n"
+                    "🤬 Ab Anti-Gali uski gali delete nahi karega.\n"
                     "🔗 Anti-Link active rahega.\n"
                     "🚨 Anti-Spam active rahega.\n"
                     "🔁 Anti-Duplicate active rahega."
@@ -906,11 +914,11 @@ class AutoMod(commands.Cog):
             "badword whitelist"
         )
     )
-    @app_commands.checks.has_permissions(
-        administrator=True
-    )
     @app_commands.describe(
         member="Member to remove from Gali Whitelist"
+    )
+    @app_commands.checks.has_permissions(
+        administrator=True
     )
     async def unwhitelistgali(
         self,
@@ -936,9 +944,9 @@ class AutoMod(commands.Cog):
 
             await interaction.response.send_message(
                 (
-                    f"✅ {member.mention} ko "
+                    f"🔴 {member.mention} ko "
                     "**Gali Whitelist** se remove kar diya.\n\n"
-                    "🤬 Ab uski bad words AutoMod detect karega."
+                    "🤬 Ab Anti-Gali normally apply hoga."
                 ),
                 ephemeral=True
             )
@@ -1062,7 +1070,6 @@ class AutoMod(commands.Cog):
         def status(value):
 
             if value:
-
                 return "🟢 **ONLINE**"
 
             return "🔴 **OFFLINE**"
@@ -1147,4 +1154,9 @@ async def setup(bot):
 
     await bot.add_cog(
         AutoMod(bot)
+    )
+
+    print(
+        "✅ automod.py successfully loaded",
+        flush=True
     )
