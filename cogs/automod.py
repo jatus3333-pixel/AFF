@@ -2,6 +2,7 @@ import re
 import time
 import json
 import os
+
 from collections import defaultdict, deque
 from datetime import timedelta
 
@@ -26,21 +27,24 @@ class AutoMod(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        # -------------------------------------------------
+        # =================================================
         # MEMORY
-        # -------------------------------------------------
+        # =================================================
 
-        # Per guild + user
+        # Guild + User -> timestamps
         self.message_history = defaultdict(
             lambda: deque(maxlen=20)
         )
 
+        # Guild + User -> last message
         self.last_messages = {}
+
+        # Guild + User -> duplicate count
         self.duplicate_counts = defaultdict(int)
 
-        # -------------------------------------------------
+        # =================================================
         # SETTINGS
-        # -------------------------------------------------
+        # =================================================
 
         self.settings = defaultdict(
             lambda: {
@@ -51,32 +55,30 @@ class AutoMod(commands.Cog):
             }
         )
 
-        # -------------------------------------------------
+        # =================================================
         # GALI WHITELIST
-        #
-        # {
-        #     "guild_id": [user_id, user_id]
-        # }
-        # -------------------------------------------------
+        # =================================================
 
         self.gali_whitelist = {}
+
         self.load_gali_whitelist()
 
-        # -------------------------------------------------
+        # =================================================
         # LINK REGEX
-        # -------------------------------------------------
+        # =================================================
 
         self.link_pattern = re.compile(
-            r"(https?://\S+|www\.\S+|"
+            r"(https?://\S+|"
+            r"www\.\S+|"
             r"discord\.gg/\S+|"
             r"discord\.com/invite/\S+|"
             r"discordapp\.com/invite/\S+)",
             re.IGNORECASE
         )
 
-        # -------------------------------------------------
+        # =================================================
         # BAD WORDS
-        # -------------------------------------------------
+        # =================================================
 
         self.bad_words = {
             "mc",
@@ -109,9 +111,9 @@ class AutoMod(commands.Cog):
             "pussy"
         }
 
-        # -------------------------------------------------
+        # =================================================
         # LIMITS
-        # -------------------------------------------------
+        # =================================================
 
         self.max_messages = 5
         self.time_window = 5
@@ -121,7 +123,7 @@ class AutoMod(commands.Cog):
         self.automod_timeout_minutes = 10
 
     # =====================================================
-    # WHITELIST LOAD
+    # LOAD WHITELIST
     # =====================================================
 
     def load_gali_whitelist(self):
@@ -129,7 +131,9 @@ class AutoMod(commands.Cog):
         try:
 
             if not os.path.exists(WHITELIST_FILE):
+
                 self.gali_whitelist = {}
+
                 return
 
             with open(
@@ -169,7 +173,7 @@ class AutoMod(commands.Cog):
             self.gali_whitelist = {}
 
     # =====================================================
-    # WHITELIST SAVE
+    # SAVE WHITELIST
     # =====================================================
 
     def save_gali_whitelist(self):
@@ -195,7 +199,7 @@ class AutoMod(commands.Cog):
             )
 
     # =====================================================
-    # CHECK GALI WHITELIST
+    # CHECK WHITELIST
     # =====================================================
 
     def is_gali_whitelisted(
@@ -204,15 +208,15 @@ class AutoMod(commands.Cog):
         user_id: int
     ):
 
-        guild_users = self.gali_whitelist.get(
+        users = self.gali_whitelist.get(
             str(guild_id),
             []
         )
 
-        return int(user_id) in guild_users
+        return int(user_id) in users
 
     # =====================================================
-    # ADD GALI WHITELIST
+    # ADD WHITELIST
     # =====================================================
 
     def add_gali_whitelist(
@@ -239,7 +243,7 @@ class AutoMod(commands.Cog):
         return True
 
     # =====================================================
-    # REMOVE GALI WHITELIST
+    # REMOVE WHITELIST
     # =====================================================
 
     def remove_gali_whitelist(
@@ -295,8 +299,9 @@ class AutoMod(commands.Cog):
 
         try:
 
-            # Don't try to timeout server owner
+            # Never timeout server owner
             if member.guild.owner_id == member.id:
+
                 return False
 
             await member.timeout(
@@ -357,7 +362,7 @@ class AutoMod(commands.Cog):
         return embed
 
     # =====================================================
-    # SEND SECURITY ALERT
+    # SECURITY ALERT
     # =====================================================
 
     async def send_security_alert(
@@ -453,25 +458,28 @@ class AutoMod(commands.Cog):
         message: discord.Message
     ):
 
-        # -------------------------------------------------
+        # =================================================
         # IGNORE BOTS
-        # -------------------------------------------------
+        # =================================================
 
         if message.author.bot:
+
             return
 
-        # -------------------------------------------------
+        # =================================================
         # IGNORE DMS
-        # -------------------------------------------------
+        # =================================================
 
         if message.guild is None:
+
             return
 
-        # -------------------------------------------------
+        # =================================================
         # SERVER OWNER BYPASS
-        # -------------------------------------------------
+        # =================================================
 
         if self.is_server_owner(message):
+
             return
 
         guild_id = message.guild.id
@@ -510,19 +518,13 @@ class AutoMod(commands.Cog):
 
                     embed = self.security_embed(
                         "🔗 LINK BLOCKED",
-
-                        f"""
-### 🛡️ Security Action
-
-👤 **Member:** {message.author.mention}
-
-🔗 **Violation:** Unauthorized link
-
-🟢 **Action:** 10 Minute Timeout
-
-🗑️ **Message:** Deleted
-""",
-
+                        (
+                            "### 🛡️ Security Action\n\n"
+                            f"👤 **Member:** {message.author.mention}\n"
+                            "🔗 **Violation:** Unauthorized link\n"
+                            "🟢 **Action:** 10 Minute Timeout\n"
+                            "🗑️ **Message:** Deleted"
+                        ),
                         discord.Color.red()
                     )
 
@@ -546,8 +548,6 @@ class AutoMod(commands.Cog):
         # =================================================
         # ANTI BADWORD
         #
-        # IMPORTANT:
-        #
         # GALI WHITELIST ONLY BYPASSES BADWORDS.
         #
         # LINKS / SPAM / DUPLICATES STILL WORK.
@@ -560,15 +560,6 @@ class AutoMod(commands.Cog):
                 user_id
             )
 
-            # -------------------------------------------------
-            # IF MEMBER IS WHITELISTED:
-            #
-            # COMPLETELY SKIP BADWORD CHECK.
-            # DO NOT RETURN.
-            #
-            # This allows the remaining protections to run.
-            # -------------------------------------------------
-
             if not whitelisted:
 
                 content = message.content.lower()
@@ -579,9 +570,7 @@ class AutoMod(commands.Cog):
 
                     pattern = (
                         r"(?<!\w)"
-                        + re.escape(
-                            word.lower()
-                        )
+                        + re.escape(word.lower())
                         + r"(?!\w)"
                     )
 
@@ -592,11 +581,12 @@ class AutoMod(commands.Cog):
                     ):
 
                         found_word = word
+
                         break
 
-                # -----------------------------------------
+                # =========================================
                 # BADWORD FOUND
-                # -----------------------------------------
+                # =========================================
 
                 if found_word is not None:
 
@@ -621,19 +611,13 @@ class AutoMod(commands.Cog):
 
                         embed = self.security_embed(
                             "🚨 LANGUAGE VIOLATION",
-
-                            f"""
-### 🛡️ Security Action
-
-👤 **Member:** {message.author.mention}
-
-⚠️ **Violation:** Inappropriate language
-
-🟢 **Action:** 10 Minute Timeout
-
-🗑️ **Message:** Deleted
-""",
-
+                            (
+                                "### 🛡️ Security Action\n\n"
+                                f"👤 **Member:** {message.author.mention}\n"
+                                "⚠️ **Violation:** Inappropriate language\n"
+                                "🟢 **Action:** 10 Minute Timeout\n"
+                                "🗑️ **Message:** Deleted"
+                            ),
                             discord.Color.red()
                         )
 
@@ -657,10 +641,12 @@ class AutoMod(commands.Cog):
                         try:
 
                             await message.channel.send(
-                                f"⚠️ **AutoMod Alert:** "
-                                f"{message.author.mention} ne bad word use kiya, "
-                                f"lekin bot ke paas **Timeout** dene ki permission "
-                                f"/ role priority nahi hai!",
+                                (
+                                    "⚠️ **AutoMod Alert:** "
+                                    f"{message.author.mention} ne bad word use kiya, "
+                                    "lekin bot ke paas **Timeout** dene ki "
+                                    "permission / role priority nahi hai!"
+                                ),
                                 delete_after=7
                             )
 
@@ -691,8 +677,7 @@ class AutoMod(commands.Cog):
 
             while (
                 history
-                and now - history[0]
-                > self.time_window
+                and now - history[0] > self.time_window
             ):
 
                 history.popleft()
@@ -720,19 +705,13 @@ class AutoMod(commands.Cog):
 
                     embed = self.security_embed(
                         "🚨 SPAM DETECTED",
-
-                        f"""
-### 🛡️ Security Action
-
-👤 **Member:** {message.author.mention}
-
-📊 **Violation:** Message spam
-
-🟢 **Action:** 10 Minute Timeout
-
-🗑️ **Message:** Deleted
-""",
-
+                        (
+                            "### 🛡️ Security Action\n\n"
+                            f"👤 **Member:** {message.author.mention}\n"
+                            "📊 **Violation:** Message spam\n"
+                            "🟢 **Action:** 10 Minute Timeout\n"
+                            "🗑️ **Message:** Deleted"
+                        ),
                         discord.Color.red()
                     )
 
@@ -810,19 +789,13 @@ class AutoMod(commands.Cog):
 
                         embed = self.security_embed(
                             "🔁 REPEATED MESSAGE",
-
-                            f"""
-### 🛡️ Security Action
-
-👤 **Member:** {message.author.mention}
-
-⚠️ **Violation:** Repeated message
-
-🟢 **Action:** 10 Minute Timeout
-
-🗑️ **Message:** Deleted
-""",
-
+                            (
+                                "### 🛡️ Security Action\n\n"
+                                f"👤 **Member:** {message.author.mention}\n"
+                                "⚠️ **Violation:** Repeated message\n"
+                                "🟢 **Action:** 10 Minute Timeout\n"
+                                "🗑️ **Message:** Deleted"
+                            ),
                             discord.Color.red()
                         )
 
@@ -858,7 +831,7 @@ class AutoMod(commands.Cog):
             ] = content
 
     # =====================================================
-    # WHITELIST GALI
+    # /WHITELISTGALI
     # =====================================================
 
     @app_commands.command(
@@ -900,26 +873,30 @@ class AutoMod(commands.Cog):
         if added:
 
             await interaction.response.send_message(
-                f"✅ {member.mention} ko "
-                f"**Gali Whitelist** kar diya.\n\n"
-                f"🤬 Ab Anti-Badword uski gali "
-                f"delete nahi karega.\n"
-                f"🔗 Anti-Link active rahega.\n"
-                f"🚨 Anti-Spam active rahega.\n"
-                f"🔁 Anti-Duplicate active rahega.",
+                (
+                    f"✅ {member.mention} ko "
+                    "**Gali Whitelist** kar diya.\n\n"
+                    "🤬 Ab Anti-Badword uski gali "
+                    "delete nahi karega.\n"
+                    "🔗 Anti-Link active rahega.\n"
+                    "🚨 Anti-Spam active rahega.\n"
+                    "🔁 Anti-Duplicate active rahega."
+                ),
                 ephemeral=True
             )
 
         else:
 
             await interaction.response.send_message(
-                f"ℹ️ {member.mention} already "
-                f"**Gali Whitelist** me hai.",
+                (
+                    f"ℹ️ {member.mention} already "
+                    "**Gali Whitelist** me hai."
+                ),
                 ephemeral=True
             )
 
     # =====================================================
-    # UNWHITELIST GALI
+    # /UNWHITELISTGALI
     # =====================================================
 
     @app_commands.command(
@@ -958,22 +935,26 @@ class AutoMod(commands.Cog):
         if removed:
 
             await interaction.response.send_message(
-                f"✅ {member.mention} ko "
-                f"**Gali Whitelist** se remove kar diya.\n\n"
-                f"🤬 Ab uski bad words AutoMod detect karega.",
+                (
+                    f"✅ {member.mention} ko "
+                    "**Gali Whitelist** se remove kar diya.\n\n"
+                    "🤬 Ab uski bad words AutoMod detect karega."
+                ),
                 ephemeral=True
             )
 
         else:
 
             await interaction.response.send_message(
-                f"ℹ️ {member.mention} "
-                f"Gali Whitelist me tha hi nahi.",
+                (
+                    f"ℹ️ {member.mention} "
+                    "Gali Whitelist me tha hi nahi."
+                ),
                 ephemeral=True
             )
 
     # =====================================================
-    # LIST GALI WHITELIST
+    # /GALIWHITELIST
     # =====================================================
 
     @app_commands.command(
@@ -1050,7 +1031,7 @@ class AutoMod(commands.Cog):
         )
 
     # =====================================================
-    # AUTOMOD STATUS
+    # /AUTOMOD_STATUS
     # =====================================================
 
     @app_commands.command(
@@ -1095,12 +1076,10 @@ class AutoMod(commands.Cog):
 
         embed = discord.Embed(
             title="🛡️ HSL SECURITY",
-
             description=(
                 "### SECURITY STATUS\n\n"
                 "━━━━━━━━━━━━━━━━━━━━"
             ),
-
             color=discord.Color.green()
         )
 
