@@ -15,6 +15,7 @@ from discord.ext import commands
 # =========================================================
 
 WHITELIST_FILE = "gali_whitelist.json"
+LINK_WHITELIST_FILE = "link_whitelist.json"
 
 
 # =========================================================
@@ -52,7 +53,7 @@ class AutoMod(commands.Cog):
         )
 
         # -------------------------------------------------
-        # GALI WHITELIST
+        # GALI WHITELIST & LINK WHITELIST
         #
         # {
         #     "guild_id": [user_id, user_id]
@@ -60,8 +61,10 @@ class AutoMod(commands.Cog):
         # -------------------------------------------------
 
         self.gali_whitelist = {}
+        self.link_whitelist = {}
 
         self.load_gali_whitelist()
+        self.load_link_whitelist()
 
         # -------------------------------------------------
         # LINK REGEX
@@ -125,7 +128,7 @@ class AutoMod(commands.Cog):
         print("🛡️ AutoMod initialized", flush=True)
 
     # =====================================================
-    # WHITELIST LOAD
+    # WHITELIST LOAD (GALI)
     # =====================================================
 
     def load_gali_whitelist(self):
@@ -182,7 +185,64 @@ class AutoMod(commands.Cog):
             self.gali_whitelist = {}
 
     # =====================================================
-    # WHITELIST SAVE
+    # WHITELIST LOAD (LINK)
+    # =====================================================
+
+    def load_link_whitelist(self):
+
+        try:
+
+            if not os.path.exists(LINK_WHITELIST_FILE):
+                self.link_whitelist = {}
+                return
+
+            with open(
+                LINK_WHITELIST_FILE,
+                "r",
+                encoding="utf-8"
+            ) as f:
+
+                data = json.load(f)
+
+            self.link_whitelist = {}
+
+            if not isinstance(data, dict):
+                self.link_whitelist = {}
+                return
+
+            for guild_id, users in data.items():
+
+                try:
+
+                    if not isinstance(users, list):
+                        users = []
+
+                    self.link_whitelist[str(guild_id)] = [
+                        int(user_id)
+                        for user_id in users
+                    ]
+
+                except (ValueError, TypeError):
+
+                    self.link_whitelist[str(guild_id)] = []
+
+            print(
+                "[AUTOMOD] Loaded link whitelist: "
+                f"{len(self.link_whitelist)} server(s)",
+                flush=True
+            )
+
+        except Exception as e:
+
+            print(
+                f"[AUTOMOD] Link Whitelist load error: {e}",
+                flush=True
+            )
+
+            self.link_whitelist = {}
+
+    # =====================================================
+    # WHITELIST SAVE (GALI)
     # =====================================================
 
     def save_gali_whitelist(self):
@@ -209,6 +269,33 @@ class AutoMod(commands.Cog):
             )
 
     # =====================================================
+    # WHITELIST SAVE (LINK)
+    # =====================================================
+
+    def save_link_whitelist(self):
+
+        try:
+
+            with open(
+                LINK_WHITELIST_FILE,
+                "w",
+                encoding="utf-8"
+            ) as f:
+
+                json.dump(
+                    self.link_whitelist,
+                    f,
+                    indent=4
+                )
+
+        except Exception as e:
+
+            print(
+                f"[AUTOMOD] Link Whitelist save error: {e}",
+                flush=True
+            )
+
+    # =====================================================
     # CHECK GALI WHITELIST
     # =====================================================
 
@@ -219,6 +306,23 @@ class AutoMod(commands.Cog):
     ):
 
         guild_users = self.gali_whitelist.get(
+            str(guild_id),
+            []
+        )
+
+        return int(user_id) in guild_users
+
+    # =====================================================
+    # CHECK LINK WHITELIST
+    # =====================================================
+
+    def is_link_whitelisted(
+        self,
+        guild_id: int,
+        user_id: int
+    ):
+
+        guild_users = self.link_whitelist.get(
             str(guild_id),
             []
         )
@@ -251,6 +355,31 @@ class AutoMod(commands.Cog):
         return True
 
     # =====================================================
+    # ADD LINK WHITELIST
+    # =====================================================
+
+    def add_link_whitelist(
+        self,
+        guild_id: int,
+        user_id: int
+    ):
+
+        guild_id = str(guild_id)
+        user_id = int(user_id)
+
+        if guild_id not in self.link_whitelist:
+            self.link_whitelist[guild_id] = []
+
+        if user_id in self.link_whitelist[guild_id]:
+            return False
+
+        self.link_whitelist[guild_id].append(user_id)
+
+        self.save_link_whitelist()
+
+        return True
+
+    # =====================================================
     # REMOVE GALI WHITELIST
     # =====================================================
 
@@ -275,6 +404,34 @@ class AutoMod(commands.Cog):
             del self.gali_whitelist[guild_id]
 
         self.save_gali_whitelist()
+
+        return True
+
+    # =====================================================
+    # REMOVE LINK WHITELIST
+    # =====================================================
+
+    def remove_link_whitelist(
+        self,
+        guild_id: int,
+        user_id: int
+    ):
+
+        guild_id = str(guild_id)
+        user_id = int(user_id)
+
+        if guild_id not in self.link_whitelist:
+            return False
+
+        if user_id not in self.link_whitelist[guild_id]:
+            return False
+
+        self.link_whitelist[guild_id].remove(user_id)
+
+        if not self.link_whitelist[guild_id]:
+            del self.link_whitelist[guild_id]
+
+        self.save_link_whitelist()
 
         return True
 
@@ -460,7 +617,7 @@ class AutoMod(commands.Cog):
         )
 
         print(
-            "🛡️ Gali whitelist system loaded",
+            "🛡️ Gali & Link whitelist systems loaded",
             flush=True
         )
 
@@ -506,56 +663,63 @@ class AutoMod(commands.Cog):
 
         if settings["links"]:
 
-            if self.link_pattern.search(
-                message.content
-            ):
+            link_whitelisted = self.is_link_whitelisted(
+                guild_id,
+                user_id
+            )
 
-                try:
+            if not link_whitelisted:
 
-                    await message.delete()
-
-                except (
-                    discord.Forbidden,
-                    discord.NotFound,
-                    discord.HTTPException
+                if self.link_pattern.search(
+                    message.content
                 ):
-
-                    pass
-
-                timed_out = await self.timeout_member(
-                    message.author,
-                    "HSL AutoMod: Unauthorized link"
-                )
-
-                if timed_out:
-
-                    embed = self.security_embed(
-                        "🔗 LINK BLOCKED",
-                        (
-                            "### 🛡️ Security Action\n\n"
-                            f"👤 **Member:** {message.author.mention}\n"
-                            "🔗 **Violation:** Unauthorized link\n"
-                            "🟢 **Action:** 10 Minute Timeout\n"
-                            "🗑️ **Message:** Deleted"
-                        ),
-                        discord.Color.red()
-                    )
 
                     try:
 
-                        embed.set_thumbnail(
-                            url=message.author.display_avatar.url
-                        )
+                        await message.delete()
 
-                    except Exception:
+                    except (
+                        discord.Forbidden,
+                        discord.NotFound,
+                        discord.HTTPException
+                    ):
+
                         pass
 
-                    await self.send_security_alert(
-                        message.channel,
-                        embed
+                    timed_out = await self.timeout_member(
+                        message.author,
+                        "HSL AutoMod: Unauthorized link"
                     )
 
-                return
+                    if timed_out:
+
+                        embed = self.security_embed(
+                            "🔗 LINK BLOCKED",
+                            (
+                                "### 🛡️ Security Action\n\n"
+                                f"👤 **Member:** {message.author.mention}\n"
+                                "🔗 **Violation:** Unauthorized link\n"
+                                "🟢 **Action:** 10 Minute Timeout\n"
+                                "🗑️ **Message:** Deleted"
+                            ),
+                            discord.Color.red()
+                        )
+
+                        try:
+
+                            embed.set_thumbnail(
+                                url=message.author.display_avatar.url
+                            )
+
+                        except Exception:
+                            pass
+
+                        await self.send_security_alert(
+                            message.channel,
+                            embed
+                        )
+
+                    return
 
         # =================================================
         # ANTI BADWORD
@@ -1039,6 +1203,205 @@ class AutoMod(commands.Cog):
         )
 
     # =====================================================
+    # /WHITELISTLINK
+    # =====================================================
+
+    @app_commands.command(
+        name="whitelistlink",
+        description=(
+            "Allow a member to post links "
+            "without Anti-Link punishment"
+        )
+    )
+    @app_commands.describe(
+        member=(
+            "Member who should be allowed "
+            "to post links"
+        )
+    )
+    @app_commands.checks.has_permissions(
+        administrator=True
+    )
+    async def whitelistlink(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member
+    ):
+
+        if interaction.guild is None:
+
+            await interaction.response.send_message(
+                "❌ Ye command server ke andar use karo.",
+                ephemeral=True
+            )
+
+            return
+
+        added = self.add_link_whitelist(
+            interaction.guild.id,
+            member.id
+        )
+
+        if added:
+
+            await interaction.response.send_message(
+                (
+                    f"✅ {member.mention} ko "
+                    "**Link Whitelist** kar diya.\n\n"
+                    "🔗 Ab Anti-Link uske links delete nahi karega.\n"
+                    "🤬 Anti-Badword active rahega.\n"
+                    "🚨 Anti-Spam active rahega.\n"
+                    "🔁 Anti-Duplicate active rahega."
+                ),
+                ephemeral=True
+            )
+
+        else:
+
+            await interaction.response.send_message(
+                (
+                    f"ℹ️ {member.mention} already "
+                    "**Link Whitelist** me hai."
+                ),
+                ephemeral=True
+            )
+
+    # =====================================================
+    # /UNWHITELISTLINK
+    # =====================================================
+
+    @app_commands.command(
+        name="unwhitelistlink",
+        description=(
+            "Remove a member from the "
+            "link whitelist"
+        )
+    )
+    @app_commands.describe(
+        member="Member to remove from Link Whitelist"
+    )
+    @app_commands.checks.has_permissions(
+        administrator=True
+    )
+    async def unwhitelistlink(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member
+    ):
+
+        if interaction.guild is None:
+
+            await interaction.response.send_message(
+                "❌ Ye command server ke andar use karo.",
+                ephemeral=True
+            )
+
+            return
+
+        removed = self.remove_link_whitelist(
+            interaction.guild.id,
+            member.id
+        )
+
+        if removed:
+
+            await interaction.response.send_message(
+                (
+                    f"🔴 {member.mention} ko "
+                    "**Link Whitelist** se remove kar diya.\n\n"
+                    "🔗 Ab Anti-Link normally apply hoga."
+                ),
+                ephemeral=True
+            )
+
+        else:
+
+            await interaction.response.send_message(
+                (
+                    f"ℹ️ {member.mention} "
+                    "Link Whitelist me tha hi nahi."
+                ),
+                ephemeral=True
+            )
+
+    # =====================================================
+    # /LINKWHITELIST
+    # =====================================================
+
+    @app_commands.command(
+        name="linkwhitelist",
+        description=(
+            "Show members who are allowed "
+            "to post links"
+        )
+    )
+    @app_commands.checks.has_permissions(
+        administrator=True
+    )
+    async def linkwhitelist(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        if interaction.guild is None:
+
+            await interaction.response.send_message(
+                "❌ Ye command server ke andar use karo.",
+                ephemeral=True
+            )
+
+            return
+
+        users = self.link_whitelist.get(
+            str(interaction.guild.id),
+            []
+        )
+
+        if not users:
+
+            await interaction.response.send_message(
+                "📋 **Link Whitelist empty hai.**",
+                ephemeral=True
+            )
+
+            return
+
+        mentions = []
+
+        for user_id in users:
+
+            member = interaction.guild.get_member(
+                user_id
+            )
+
+            if member:
+
+                mentions.append(
+                    f"• {member.mention} (`{member.id}`)"
+                )
+
+            else:
+
+                mentions.append(
+                    f"• <@{user_id}> (`{user_id}`)"
+                )
+
+        embed = discord.Embed(
+            title="🔗 LINK WHITELIST",
+            description="\n".join(mentions),
+            color=discord.Color.green()
+        )
+
+        embed.set_footer(
+            text="HSL SECURITY • AutoMod"
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True
+        )
+
+    # =====================================================
     # /AUTOMOD_STATUS
     # =====================================================
 
@@ -1074,8 +1437,15 @@ class AutoMod(commands.Cog):
 
             return "🔴 **OFFLINE**"
 
-        whitelist_count = len(
+        gali_whitelist_count = len(
             self.gali_whitelist.get(
+                str(interaction.guild.id),
+                []
+            )
+        )
+
+        link_whitelist_count = len(
+            self.link_whitelist.get(
                 str(interaction.guild.id),
                 []
             )
@@ -1131,7 +1501,15 @@ class AutoMod(commands.Cog):
         embed.add_field(
             name="🤬 Gali Whitelist",
             value=(
-                f"🟢 **{whitelist_count} MEMBER(S)**"
+                f"🟢 **{gali_whitelist_count} MEMBER(S)**"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="🔗 Link Whitelist",
+            value=(
+                f"🟢 **{link_whitelist_count} MEMBER(S)**"
             ),
             inline=True
         )
