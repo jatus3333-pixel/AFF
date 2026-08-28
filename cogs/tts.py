@@ -23,6 +23,19 @@ class TTS(commands.Cog):
         self.queue = {}
         self.lock = {}
 
+    @app_commands.command(name="join", description="VC me aao")
+    async def join(self, interaction: discord.Interaction):
+        if not interaction.user.voice:
+            return await interaction.response.send_message("Pehle VC join kar!", ephemeral=True)
+        await interaction.user.voice.channel.connect()
+        await interaction.response.send_message(f"✅ {interaction.user.voice.channel.name} me aa gaya!", ephemeral=True)
+
+    @app_commands.command(name="leave", description="VC se niklo")
+    async def leave(self, interaction: discord.Interaction):
+        if interaction.guild.voice_client:
+            await interaction.guild.voice_client.disconnect()
+        await interaction.response.send_message("✅ Nikal gaya!", ephemeral=True)
+
     @app_commands.command(name="settts", description="Kis VC ka chat padhna hai")
     async def settts(self, interaction: discord.Interaction, vc: discord.VoiceChannel):
         self.tts_vc[interaction.guild.id] = vc.id
@@ -70,7 +83,6 @@ class TTS(commands.Cog):
                 player = music_cog.get_player(gid) if music_cog else None
 
                 if player and player.voice and player.voice.is_playing() and player.current:
-                    # Gana baj raha hai -> DUCKING MIX
                     stream = await player.get_audio_stream(player.current)
                     if not stream:
                         vc.play(discord.FFmpegPCMAudio(tts_file))
@@ -78,14 +90,10 @@ class TTS(commands.Cog):
                         continue
 
                     original_vol = player.volume
-                    # Current music ko roko
                     player.voice.stop()
                     await asyncio.sleep(0.2)
 
-                    # FFMPEG se mix banao: music 25% + tts 100%
-                    # Music ko background me halka rakho
                     try:
-                        # Music stream ko thoda sa download karke mix karenge
                         cmd = [
                             "ffmpeg", "-y",
                             "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_at_eof", "1",
@@ -100,27 +108,21 @@ class TTS(commands.Cog):
 
                         if os.path.exists(duck_file):
                             vc.play(discord.FFmpegPCMAudio(duck_file))
-                            while vc.is_playing():
-                                await asyncio.sleep(0.1)
+                            while vc.is_playing(): await asyncio.sleep(0.1)
                         else:
-                            # Agar mix fail hua to sirf TTS
                             vc.play(discord.FFmpegPCMAudio(tts_file))
-                            while vc.is_playing():
-                                await asyncio.sleep(0.1)
-
+                            while vc.is_playing(): await asyncio.sleep(0.1)
                     except Exception as e:
                         print(f"Duck mix error: {e}")
                         vc.play(discord.FFmpegPCMAudio(tts_file))
                         while vc.is_playing(): await asyncio.sleep(0.1)
 
-                    # Wapas original gana bajao
                     try:
                         headers = stream.get("headers") or {}
                         header_lines = [f"{k}: {v}" for k, v in headers.items() if v]
                         ffmpeg_headers = "\r\n".join(header_lines) + "\r\n"
                         before_options = f"-nostdin -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_on_network_error 1 -reconnect_on_http_error 403,404,408,429,500,502,503,504 -reconnect_delay_max 3 -rw_timeout 10000000 -headers \"{ffmpeg_headers}\""
                         ffmpeg_options = "-vn -loglevel warning -ar 48000 -ac 2 -bufsize 512k"
-
                         source = discord.FFmpegPCMAudio(stream["url"], before_options=before_options, options=ffmpeg_options)
                         source = discord.PCMVolumeTransformer(source, volume=original_vol)
 
@@ -135,7 +137,6 @@ class TTS(commands.Cog):
                         await player.play_next()
 
                 else:
-                    # Gana nahi baj raha
                     vc.play(discord.FFmpegPCMAudio(tts_file))
                     while vc.is_playing(): await asyncio.sleep(0.1)
 
