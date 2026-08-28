@@ -1,6 +1,16 @@
-import discord, edge_tts, asyncio
+import discord, edge_tts, asyncio, re
 from discord.ext import commands
 from discord import app_commands
+
+def clean_text(text: str):
+    # link hatao
+    text = re.sub(r'http\S+', '', text)
+    # mention hatao <@123>, <#123>, <:emoji:>
+    text = re.sub(r'<[^>]+>', '', text)
+    # emoji aur faltu symbol hatao
+    text = re.sub(r'[:;][a-z_]+:', '', text) # :emoji:
+    text = text.strip()
+    return text[:150] # max 150 char
 
 class TTS(commands.Cog):
     def __init__(self, bot):
@@ -38,6 +48,7 @@ class TTS(commands.Cog):
     async def on_message(self, message):
         if message.author.bot or not message.guild: return
         if not self.on.get(message.guild.id): return
+        if not message.content: return
 
         ch_id = self.tts_channel.get(message.guild.id)
         if ch_id and message.channel.id!= ch_id: return
@@ -45,23 +56,50 @@ class TTS(commands.Cog):
         vc = message.guild.voice_client
         if not vc: return
 
+        cleaned = clean_text(message.content)
+        if not cleaned: return # agar sirf link/emoji tha to ignore
+
         gid = message.guild.id
         if gid not in self.queue:
             self.queue[gid] = []
             self.lock[gid] = False
 
-        self.queue[gid].append(f"{message.author.display_name} said {message.content[:100]}")
+        # Hindi hai to Hindi voice, warna English
+        is_hindi = any('\u0900' <= c <= '\u097F' for c in cleaned)
+        voice = "hi-IN-MadhurNeural" if is_hindi else "en-IN-PrabhatNeural"
+
+        self.queue[gid].append((cleaned, voice))
 
         if self.lock[gid]: return
         self.lock[gid] = True
 
         while self.queue[gid]:
-            text = self.queue[gid].pop(0)
-            if vc.is_playing(): vc.stop()
-            await edge_tts.Communicate(text, voice="en-US-GuyNeural").save(f"tts_{gid}.mp3")
-            vc.play(discord.FFmpegPCMAudio(f"tts_{gid}.mp3"))
-            while vc.is_playing():
+            text, v = self.queue[gid].pop(0)
+
+            # Gana chal raha hai to usko pause kar do, band mat karo
+            was_paused = False
+            if vc.is_playing():
+                # ye music ka gana hai, TTS nahi
+                vc.pause()
+                was_paused = True
                 await asyncio.sleep(0.5)
+
+            try:
+                await edge_tts.Communicate(text, voice=v).save(f"tts_{gid}.mp3")
+                vc.play(discord.FFmpegPCMAudio(f"tts_{gid}.mp3"))
+                while vc.is_playing():
+                    await asyncio.sleep(0.3)
+            except Exception as e:
+                print(f"TTS Error: {e}")
+
+            # Message padh liya, ab gana wapas chalao
+            if was_paused and not vc.is_playing():
+                try:
+                    vc.resume()
+                except:
+                    pass
+
+            await asyncio.sleep(0.5)
 
         self.lock[gid] = False
 
