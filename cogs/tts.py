@@ -12,7 +12,7 @@ class TTS(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.on = {}
-        self.tts_vc = {} # yahan VC id save hoga
+        self.tts_vc = {}
         self.queue = {}
         self.lock = {}
 
@@ -32,7 +32,7 @@ class TTS(commands.Cog):
     @app_commands.command(name="settts", description="Kis VC ka chat padhna hai")
     async def settts(self, interaction: discord.Interaction, vc: discord.VoiceChannel):
         self.tts_vc[interaction.guild.id] = vc.id
-        await interaction.response.send_message(f"✅ Set hogaya! Ab se **{vc.name}** ke chat ke message padhunga!", ephemeral=True)
+        await interaction.response.send_message(f"✅ Set! Ab **{vc.name}** ka chat padhunga", ephemeral=True)
 
     @app_commands.command(name="tts", description="TTS on/off")
     @app_commands.choices(mode=[app_commands.Choice(name="on", value="on"), app_commands.Choice(name="off", value="off")])
@@ -51,8 +51,6 @@ class TTS(commands.Cog):
 
         gid = message.guild.id
         set_vc_id = self.tts_vc.get(gid)
-
-        # Agar VC set kiya hai to sirf usi ka padhega, nahi to jisme bot hai uska padhega
         target_vc_id = set_vc_id if set_vc_id else vc_client.channel.id
 
         if message.channel.id!= target_vc_id:
@@ -73,13 +71,11 @@ class TTS(commands.Cog):
         self.lock[gid] = True
 
         while self.queue[gid]:
-            text, v = self.queue[gid].pop(0)
+            # IMPORTANT FIX: Agar gana baj raha hai to wait karo, usko kaato mat
+            while vc_client.is_playing():
+                await asyncio.sleep(1)
 
-            was_paused = False
-            if vc_client.is_playing():
-                vc_client.pause()
-                was_paused = True
-                await asyncio.sleep(0.3)
+            text, v = self.queue[gid].pop(0)
 
             try:
                 await edge_tts.Communicate(text, voice=v).save(f"tts_{gid}.mp3")
@@ -89,9 +85,6 @@ class TTS(commands.Cog):
             except Exception as e:
                 print(f"TTS Error: {e}")
 
-            if was_paused and not vc_client.is_playing():
-                try: vc_client.resume()
-                except: pass
             await asyncio.sleep(0.5)
 
         self.lock[gid] = False
