@@ -6,7 +6,7 @@ def clean_text(text: str):
     text = re.sub(r'http\S+', '', text)
     text = re.sub(r'<[^>]+>', '', text)
     text = re.sub(r'[:;][a-z_]+:', '', text)
-    return text.strip()[:150]
+    return text.strip()[:120] # thoda chota rakha taaki fast bole
 
 class TTS(commands.Cog):
     def __init__(self, bot):
@@ -15,7 +15,7 @@ class TTS(commands.Cog):
         self.tts_vc = {}
         self.queue = {}
         self.lock = {}
-        self.ducking = {} # guild_id -> original volume
+        self.ducking = {}
 
     @app_commands.command(name="join", description="VC me aao")
     async def join(self, interaction: discord.Interaction):
@@ -61,7 +61,7 @@ class TTS(commands.Cog):
             self.queue[gid] = []
             self.lock[gid] = False
 
-        full_text = f"{message.author.display_name} said {cleaned}"
+        full_text = f"{message.author.display_name} says {cleaned}"
         self.queue[gid].append(full_text)
 
         if self.lock[gid]: return
@@ -71,44 +71,37 @@ class TTS(commands.Cog):
             text = self.queue[gid].pop(0)
 
             try:
-                await edge_tts.Communicate(text, voice="en-IN-NeerjaNeural").save(f"tts_{gid}.mp3")
+                # FAST MALE VOICE - Prabhat is best male
+                await edge_tts.Communicate(text, voice="hi-IN-MadhurNeural", rate="+15%").save(f"tts_{gid}.mp3")
 
-                # ====== DUCKING LOGIC ======
                 music_cog = self.bot.get_cog("Music")
                 player = music_cog.get_player(gid) if music_cog else None
                 was_playing_music = False
 
                 if player and player.voice and player.voice.is_playing() and player.current:
                     was_playing_music = True
-                    # 1. Volume 20% pe lao
                     if player.voice.source and isinstance(player.voice.source, discord.PCMVolumeTransformer):
                         self.ducking[gid] = player.voice.source.volume
-                        player.voice.source.volume = self.ducking[gid] * 0.2
-                    await asyncio.sleep(0.6)
-                    # 2. Music pause karo
+                        player.voice.source.volume = self.ducking[gid] * 0.15
+                    await asyncio.sleep(0.2) # pehle 0.6 tha, ab 0.2 fast
                     player.voice.pause()
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.1)
 
-                # 3. TTS bajao
                 vc.play(discord.FFmpegPCMAudio(f"tts_{gid}.mp3"))
                 while vc.is_playing():
-                    await asyncio.sleep(0.2)
+                    await asyncio.sleep(0.1)
 
-                # 4. Music wapas resume karo
                 if was_playing_music and player:
                     try:
                         player.voice.resume()
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(0.2)
                         if player.voice.source and isinstance(player.voice.source, discord.PCMVolumeTransformer):
                             player.voice.source.volume = self.ducking.get(gid, player.volume)
-                    except Exception as e:
-                        print(f"Resume error: {e}")
-                        # Agar resume fail hua toh gana wapas bajao
+                    except:
                         await player.play_next()
 
             except Exception as e:
                 print(f"TTS Error: {e}")
-                # Error aaya toh bhi music resume karo
                 try:
                     music_cog = self.bot.get_cog("Music")
                     if music_cog:
@@ -117,7 +110,7 @@ class TTS(commands.Cog):
                             p.voice.resume()
                 except: pass
 
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.1)
 
         self.lock[gid] = False
 
