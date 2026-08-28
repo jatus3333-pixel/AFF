@@ -15,6 +15,7 @@ class TTS(commands.Cog):
         self.tts_vc = {}
         self.queue = {}
         self.lock = {}
+        self.ducking = {} # guild_id -> original volume
 
     @app_commands.command(name="join", description="VC me aao")
     async def join(self, interaction: discord.Interaction):
@@ -46,15 +47,12 @@ class TTS(commands.Cog):
         if not self.on.get(message.guild.id): return
         if not message.content: return
 
-        vc_client = message.guild.voice_client
-        if not vc_client: return
+        vc = message.guild.voice_client
+        if not vc: return
 
         gid = message.guild.id
-        set_vc_id = self.tts_vc.get(gid)
-        target_vc_id = set_vc_id if set_vc_id else vc_client.channel.id
-
-        if message.channel.id!= target_vc_id:
-            return
+        target_vc_id = self.tts_vc.get(gid) or vc.channel.id
+        if message.channel.id!= target_vc_id: return
 
         cleaned = clean_text(message.content)
         if not cleaned: return
@@ -63,29 +61,63 @@ class TTS(commands.Cog):
             self.queue[gid] = []
             self.lock[gid] = False
 
-        is_hindi = any('\u0900' <= c <= '\u097F' for c in cleaned)
-        voice = "hi-IN-MadhurNeural" if is_hindi else "en-IN-PrabhatNeural"
-        self.queue[gid].append((cleaned, voice))
+        full_text = f"{message.author.display_name} said {cleaned}"
+        self.queue[gid].append(full_text)
 
         if self.lock[gid]: return
         self.lock[gid] = True
 
         while self.queue[gid]:
-            # IMPORTANT FIX: Agar gana baj raha hai to wait karo, usko kaato mat
-            while vc_client.is_playing():
-                await asyncio.sleep(1)
-
-            text, v = self.queue[gid].pop(0)
+            text = self.queue[gid].pop(0)
 
             try:
-                await edge_tts.Communicate(text, voice=v).save(f"tts_{gid}.mp3")
-                vc_client.play(discord.FFmpegPCMAudio(f"tts_{gid}.mp3"))
-                while vc_client.is_playing():
+                await edge_tts.Communicate(text, voice="en-IN-NeerjaNeural").save(f"tts_{gid}.mp3")
+
+                # ====== DUCKING LOGIC ======
+                music_cog = self.bot.get_cog("Music")
+                player = music_cog.get_player(gid) if music_cog else None
+                was_playing_music = False
+
+                if player and player.voice and player.voice.is_playing() and player.current:
+                    was_playing_music = True
+                    # 1. Volume 20% pe lao
+                    if player.voice.source and isinstance(player.voice.source, discord.PCMVolumeTransformer):
+                        self.ducking[gid] = player.voice.source.volume
+                        player.voice.source.volume = self.ducking[gid] * 0.2
+                    await asyncio.sleep(0.6)
+                    # 2. Music pause karo
+                    player.voice.pause()
                     await asyncio.sleep(0.3)
+
+                # 3. TTS bajao
+                vc.play(discord.FFmpegPCMAudio(f"tts_{gid}.mp3"))
+                while vc.is_playing():
+                    await asyncio.sleep(0.2)
+
+                # 4. Music wapas resume karo
+                if was_playing_music and player:
+                    try:
+                        player.voice.resume()
+                        await asyncio.sleep(0.5)
+                        if player.voice.source and isinstance(player.voice.source, discord.PCMVolumeTransformer):
+                            player.voice.source.volume = self.ducking.get(gid, player.volume)
+                    except Exception as e:
+                        print(f"Resume error: {e}")
+                        # Agar resume fail hua toh gana wapas bajao
+                        await player.play_next()
+
             except Exception as e:
                 print(f"TTS Error: {e}")
+                # Error aaya toh bhi music resume karo
+                try:
+                    music_cog = self.bot.get_cog("Music")
+                    if music_cog:
+                        p = music_cog.get_player(gid)
+                        if p and p.voice and p.voice.is_paused():
+                            p.voice.resume()
+                except: pass
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.3)
 
         self.lock[gid] = False
 
