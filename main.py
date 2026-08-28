@@ -74,6 +74,10 @@ class HSLBot(commands.Bot):
         print("🔄 Loading ai.py...", flush=True)
         await self.load_extension("cogs.ai")
         print("✅ ai.py loaded", flush=True)
+
+        print("🔄 Loading tts.py...", flush=True)
+        await self.load_extension("cogs.tts")
+        print("✅ tts.py loaded", flush=True)
            
         guild_ids = [
             1435943252455981080,  # Server 1
