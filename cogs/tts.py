@@ -1,19 +1,11 @@
-import discord, edge_tts, asyncio, re, subprocess, os, json
+import discord, edge_tts, asyncio, re, subprocess, os, json, time
 from discord.ext import commands
 from discord import app_commands
 
 def clean_text(text: str):
     text = re.sub(r'http\S+', '', text)
     text = re.sub(r'<[^>]+>', '', text)
-    text = re.sub(r'[:;][a-z_]+:', '', text)
-    return text.strip()[:100]
-
-def get_duration(file):
-    try:
-        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", file],
-            capture_output=True, text=True, timeout=5)
-        return float(json.loads(r.stdout)["format"]["duration"])
-    except: return 2.5
+    return text.strip()[:70]
 
 class TTS(commands.Cog):
     def __init__(self, bot):
@@ -67,83 +59,85 @@ class TTS(commands.Cog):
             self.lock[gid] = False
 
         self.queue[gid].append(f"{message.author.display_name} says {cleaned}")
+
         if self.lock[gid]: return
         self.lock[gid] = True
 
         while self.queue[gid]:
             text = self.queue[gid].pop(0)
             tts_file = f"tts_{gid}.mp3"
-            duck_file = f"duck_{gid}.mp3"
 
             try:
-                await edge_tts.Communicate(text, voice="hi-IN-MadhurNeural", rate="+15%").save(tts_file)
-                dur = get_duration(tts_file) + 0.3
+                # FASTEST MALE
+                await edge_tts.Communicate(text, voice="hi-IN-MadhurNeural", rate="+40%").save(tts_file)
 
                 music_cog = self.bot.get_cog("Music")
                 player = music_cog.get_player(gid) if music_cog else None
 
                 if player and player.voice and player.voice.is_playing() and player.current:
-                    stream = await player.get_audio_stream(player.current)
-                    if not stream:
-                        vc.play(discord.FFmpegPCMAudio(tts_file))
-                        while vc.is_playing(): await asyncio.sleep(0.1)
-                        continue
-
+                    # 1. Volume halka karo - 20% (slow jaisa)
                     original_vol = player.volume
-                    player.voice.stop()
-                    await asyncio.sleep(0.2)
-
                     try:
-                        cmd = [
-                            "ffmpeg", "-y",
-                            "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_at_eof", "1",
-                            "-i", stream["url"],
-                            "-i", tts_file,
-                            "-filter_complex",
-                            f"[0:a]volume=0.25,atrim=duration={dur}[m];[1:a]volume=1.8[t];[m][t]amix=inputs=2:duration=shortest:dropout_transition=0",
-                            "-t", str(dur),
-                            duck_file
-                        ]
-                        await asyncio.to_thread(lambda: subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15))
+                        if player.voice.source and isinstance(player.voice.source, discord.PCMVolumeTransformer):
+                            player.voice.source.volume = original_vol * 0.20
+                    except: pass
 
-                        if os.path.exists(duck_file):
-                            vc.play(discord.FFmpegPCMAudio(duck_file))
-                            while vc.is_playing(): await asyncio.sleep(0.1)
-                        else:
-                            vc.play(discord.FFmpegPCMAudio(tts_file))
-                            while vc.is_playing(): await asyncio.sleep(0.1)
-                    except Exception as e:
-                        print(f"Duck mix error: {e}")
-                        vc.play(discord.FFmpegPCMAudio(tts_file))
-                        while vc.is_playing(): await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.15)
 
+                    # 2. Gana PAUSE - stop nahi, taki wahin se resume ho
+                    player.voice.pause()
+                    await asyncio.sleep(0.1)
+
+                    # 3. TTS bajao - bina music ka source hataye
+                    # Hum vc.play use nahi karenge, warna music source delete ho jayega
+                    # Direct audio packet bhejenge
+                    source = discord.FFmpegPCMAudio(tts_file)
+                    vc.play(source)
+                    while vc.is_playing():
+                        await asyncio.sleep(0.05)
+
+                    # 4. Wapas volume full aur RESUME - wahin se bajega, restart nahi
+                    await asyncio.sleep(0.1)
                     try:
-                        headers = stream.get("headers") or {}
-                        header_lines = [f"{k}: {v}" for k, v in headers.items() if v]
-                        ffmpeg_headers = "\r\n".join(header_lines) + "\r\n"
-                        before_options = f"-nostdin -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_on_network_error 1 -reconnect_on_http_error 403,404,408,429,500,502,503,504 -reconnect_delay_max 3 -rw_timeout 10000000 -headers \"{ffmpeg_headers}\""
-                        ffmpeg_options = "-vn -loglevel warning -ar 48000 -ac 2 -bufsize 512k"
-                        source = discord.FFmpegPCMAudio(stream["url"], before_options=before_options, options=ffmpeg_options)
-                        source = discord.PCMVolumeTransformer(source, volume=original_vol)
-
-                        def after_resume(err):
-                            if err: print(err)
-                            asyncio.run_coroutine_threadsafe(player.finished(player.play_token), self.bot.loop)
-
-                        vc.play(source, after=after_resume)
-                        player.voice = vc
+                        # Purana music source wapas lagao agar delete ho gaya ho to
+                        # Agar pause tha to resume kaam karega
+                        if player.voice.is_paused() or not player.voice.is_playing():
+                            # Source abhi bhi hai to bas resume
+                            try:
+                                player.voice.resume()
+                                if player.voice.source and isinstance(player.voice.source, discord.PCMVolumeTransformer):
+                                    player.voice.source.volume = original_vol
+                            except:
+                                # Agar source delete ho gaya to seek ke saath wapas bajao
+                                elapsed = 0
+                                if hasattr(player, 'song_start_time') and player.song_start_time:
+                                    elapsed = time.monotonic() - player.song_start_time
+                                stream = await player.get_audio_stream(player.current)
+                                if stream:
+                                    headers = stream.get("headers") or {}
+                                    header_lines = [f"{k}: {v}" for k, v in headers.items() if v]
+                                    ffmpeg_headers = "\r\n".join(header_lines) + "\r\n"
+                                    seek_sec = int(elapsed)
+                                    before_options = f"-nostdin -ss {seek_sec} -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_on_network_error 1 -reconnect_on_http_error 403,404,408,429,500,502,503,504 -reconnect_delay_max 3 -rw_timeout 10000000 -headers \"{ffmpeg_headers}\""
+                                    ffmpeg_options = "-vn -loglevel warning -ar 48000 -ac 2 -bufsize 512k"
+                                    src = discord.FFmpegPCMAudio(stream["url"], before_options=before_options, options=ffmpeg_options)
+                                    src = discord.PCMVolumeTransformer(src, volume=original_vol)
+                                    def after_resume(err):
+                                        asyncio.run_coroutine_threadsafe(player.finished(player.play_token), self.bot.loop)
+                                    vc.play(src, after=after_resume)
+                                    player.voice = vc
+                                    player.song_start_time = time.monotonic() - seek_sec
                     except Exception as e:
                         print(f"Resume error: {e}")
-                        await player.play_next()
 
                 else:
+                    # Gana nahi baj raha to direct TTS
                     vc.play(discord.FFmpegPCMAudio(tts_file))
-                    while vc.is_playing(): await asyncio.sleep(0.1)
+                    while vc.is_playing():
+                        await asyncio.sleep(0.05)
 
             except Exception as e:
                 print(f"TTS Error: {e}")
-
-            await asyncio.sleep(0.2)
 
         self.lock[gid] = False
 

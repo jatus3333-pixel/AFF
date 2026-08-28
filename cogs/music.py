@@ -410,6 +410,8 @@ class MusicPlayer:
         self.play_history = deque(maxlen=100)
 
         self.last_manual_query = None
+        self.song_start_time = 0
+        self.total_paused = 0
 
 
     # =====================================================
@@ -1271,7 +1273,8 @@ class MusicPlayer:
                 # -----------------------------------------
                 # PLAY
                 # -----------------------------------------
-
+                self.song_start_time = time.monotonic()
+                self.total_paused = 0
                 try:
 
                     self.voice.play(
