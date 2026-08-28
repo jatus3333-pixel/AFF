@@ -3,20 +3,16 @@ from discord.ext import commands
 from discord import app_commands
 
 def clean_text(text: str):
-    # link hatao
     text = re.sub(r'http\S+', '', text)
-    # mention hatao <@123>, <#123>, <:emoji:>
     text = re.sub(r'<[^>]+>', '', text)
-    # emoji aur faltu symbol hatao
-    text = re.sub(r'[:;][a-z_]+:', '', text) # :emoji:
-    text = text.strip()
-    return text[:150] # max 150 char
+    text = re.sub(r'[:;][a-z_]+:', '', text)
+    return text.strip()[:150]
 
 class TTS(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.on = {}
-        self.tts_channel = {}
+        self.tts_vc = {} # yahan VC id save hoga
         self.queue = {}
         self.lock = {}
 
@@ -25,7 +21,7 @@ class TTS(commands.Cog):
         if not interaction.user.voice:
             return await interaction.response.send_message("Pehle VC join kar!", ephemeral=True)
         await interaction.user.voice.channel.connect()
-        await interaction.response.send_message("✅ Aa gaya!", ephemeral=True)
+        await interaction.response.send_message(f"✅ {interaction.user.voice.channel.name} me aa gaya!", ephemeral=True)
 
     @app_commands.command(name="leave", description="VC se niklo")
     async def leave(self, interaction: discord.Interaction):
@@ -33,10 +29,10 @@ class TTS(commands.Cog):
             await interaction.guild.voice_client.disconnect()
         await interaction.response.send_message("✅ Nikal gaya!", ephemeral=True)
 
-    @app_commands.command(name="settts", description="Konsa channel padhna hai")
-    async def settts(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        self.tts_channel[interaction.guild.id] = channel.id
-        await interaction.response.send_message(f"✅ Ab se sirf {channel.mention} ka padhunga!", ephemeral=True)
+    @app_commands.command(name="settts", description="Kis VC ka chat padhna hai")
+    async def settts(self, interaction: discord.Interaction, vc: discord.VoiceChannel):
+        self.tts_vc[interaction.guild.id] = vc.id
+        await interaction.response.send_message(f"✅ Set hogaya! Ab se **{vc.name}** ke chat ke message padhunga!", ephemeral=True)
 
     @app_commands.command(name="tts", description="TTS on/off")
     @app_commands.choices(mode=[app_commands.Choice(name="on", value="on"), app_commands.Choice(name="off", value="off")])
@@ -50,24 +46,27 @@ class TTS(commands.Cog):
         if not self.on.get(message.guild.id): return
         if not message.content: return
 
-        ch_id = self.tts_channel.get(message.guild.id)
-        if ch_id and message.channel.id!= ch_id: return
-
-        vc = message.guild.voice_client
-        if not vc: return
-
-        cleaned = clean_text(message.content)
-        if not cleaned: return # agar sirf link/emoji tha to ignore
+        vc_client = message.guild.voice_client
+        if not vc_client: return
 
         gid = message.guild.id
+        set_vc_id = self.tts_vc.get(gid)
+
+        # Agar VC set kiya hai to sirf usi ka padhega, nahi to jisme bot hai uska padhega
+        target_vc_id = set_vc_id if set_vc_id else vc_client.channel.id
+
+        if message.channel.id!= target_vc_id:
+            return
+
+        cleaned = clean_text(message.content)
+        if not cleaned: return
+
         if gid not in self.queue:
             self.queue[gid] = []
             self.lock[gid] = False
 
-        # Hindi hai to Hindi voice, warna English
         is_hindi = any('\u0900' <= c <= '\u097F' for c in cleaned)
         voice = "hi-IN-MadhurNeural" if is_hindi else "en-IN-PrabhatNeural"
-
         self.queue[gid].append((cleaned, voice))
 
         if self.lock[gid]: return
@@ -76,29 +75,23 @@ class TTS(commands.Cog):
         while self.queue[gid]:
             text, v = self.queue[gid].pop(0)
 
-            # Gana chal raha hai to usko pause kar do, band mat karo
             was_paused = False
-            if vc.is_playing():
-                # ye music ka gana hai, TTS nahi
-                vc.pause()
+            if vc_client.is_playing():
+                vc_client.pause()
                 was_paused = True
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)
 
             try:
                 await edge_tts.Communicate(text, voice=v).save(f"tts_{gid}.mp3")
-                vc.play(discord.FFmpegPCMAudio(f"tts_{gid}.mp3"))
-                while vc.is_playing():
+                vc_client.play(discord.FFmpegPCMAudio(f"tts_{gid}.mp3"))
+                while vc_client.is_playing():
                     await asyncio.sleep(0.3)
             except Exception as e:
                 print(f"TTS Error: {e}")
 
-            # Message padh liya, ab gana wapas chalao
-            if was_paused and not vc.is_playing():
-                try:
-                    vc.resume()
-                except:
-                    pass
-
+            if was_paused and not vc_client.is_playing():
+                try: vc_client.resume()
+                except: pass
             await asyncio.sleep(0.5)
 
         self.lock[gid] = False
