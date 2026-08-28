@@ -1,4 +1,4 @@
-import discord, edge_tts, asyncio, re, subprocess, os, json, time
+import discord, edge_tts, asyncio, re, os
 from discord.ext import commands
 from discord import app_commands
 
@@ -39,6 +39,23 @@ class TTS(commands.Cog):
         self.on[interaction.guild.id] = mode == "on"
         await interaction.response.send_message(f"TTS {mode.upper()}!", ephemeral=True)
 
+    async def play_tts_packet(self, vc, file_path):
+        """Gana ka source delete kiye bina TTS bajayega"""
+        try:
+            source = discord.FFmpegPCMAudio(file_path)
+            # thoda wait taaki ffmpeg start ho jaye
+            await asyncio.sleep(0.2)
+            while True:
+                data = source.read()
+                if not data:
+                    break
+                # encode=True se discord khud opus me convert kar dega
+                vc.send_audio_packet(data, encode=True)
+                await asyncio.sleep(0.02) # 20ms - discord ka frame size
+            source.cleanup()
+        except Exception as e:
+            print(f"Packet play error: {e}")
+
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot or not message.guild: return
@@ -68,15 +85,15 @@ class TTS(commands.Cog):
             tts_file = f"tts_{gid}.mp3"
 
             try:
-                # FASTEST MALE
                 await edge_tts.Communicate(text, voice="hi-IN-MadhurNeural", rate="+40%").save(tts_file)
 
                 music_cog = self.bot.get_cog("Music")
                 player = music_cog.get_player(gid) if music_cog else None
 
                 if player and player.voice and player.voice.is_playing() and player.current:
-                    # 1. Volume halka karo - 20% (slow jaisa)
                     original_vol = player.volume
+
+                    # 1. Volume halka karo - 20% (slow wala feel)
                     try:
                         if player.voice.source and isinstance(player.voice.source, discord.PCMVolumeTransformer):
                             player.voice.source.volume = original_vol * 0.20
@@ -84,60 +101,42 @@ class TTS(commands.Cog):
 
                     await asyncio.sleep(0.15)
 
-                    # 2. Gana PAUSE - stop nahi, taki wahin se resume ho
+                    # 2. Gana PAUSE karo - STOP nahi, taaki source zinda rahe
                     player.voice.pause()
                     await asyncio.sleep(0.1)
 
-                    # 3. TTS bajao - bina music ka source hataye
-                    # Hum vc.play use nahi karenge, warna music source delete ho jayega
-                    # Direct audio packet bhejenge
-                    source = discord.FFmpegPCMAudio(tts_file)
-                    vc.play(source)
-                    while vc.is_playing():
-                        await asyncio.sleep(0.05)
+                    # 3. TTS bajao - bina vc.play() ke, direct packet se
+                    # Isse music ka source delete nahi hoga
+                    await self.play_tts_packet(vc, tts_file)
 
-                    # 4. Wapas volume full aur RESUME - wahin se bajega, restart nahi
                     await asyncio.sleep(0.1)
+
+                    # 4. Wapas volume full aur RESUME - wahin se bajega
                     try:
-                        # Purana music source wapas lagao agar delete ho gaya ho to
-                        # Agar pause tha to resume kaam karega
-                        if player.voice.is_paused() or not player.voice.is_playing():
-                            # Source abhi bhi hai to bas resume
-                            try:
-                                player.voice.resume()
-                                if player.voice.source and isinstance(player.voice.source, discord.PCMVolumeTransformer):
-                                    player.voice.source.volume = original_vol
-                            except:
-                                # Agar source delete ho gaya to seek ke saath wapas bajao
-                                elapsed = 0
-                                if hasattr(player, 'song_start_time') and player.song_start_time:
-                                    elapsed = time.monotonic() - player.song_start_time
-                                stream = await player.get_audio_stream(player.current)
-                                if stream:
-                                    headers = stream.get("headers") or {}
-                                    header_lines = [f"{k}: {v}" for k, v in headers.items() if v]
-                                    ffmpeg_headers = "\r\n".join(header_lines) + "\r\n"
-                                    seek_sec = int(elapsed)
-                                    before_options = f"-nostdin -ss {seek_sec} -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_on_network_error 1 -reconnect_on_http_error 403,404,408,429,500,502,503,504 -reconnect_delay_max 3 -rw_timeout 10000000 -headers \"{ffmpeg_headers}\""
-                                    ffmpeg_options = "-vn -loglevel warning -ar 48000 -ac 2 -bufsize 512k"
-                                    src = discord.FFmpegPCMAudio(stream["url"], before_options=before_options, options=ffmpeg_options)
-                                    src = discord.PCMVolumeTransformer(src, volume=original_vol)
-                                    def after_resume(err):
-                                        asyncio.run_coroutine_threadsafe(player.finished(player.play_token), self.bot.loop)
-                                    vc.play(src, after=after_resume)
-                                    player.voice = vc
-                                    player.song_start_time = time.monotonic() - seek_sec
+                        if player.voice.source and isinstance(player.voice.source, discord.PCMVolumeTransformer):
+                            player.voice.source.volume = original_vol
+                        player.voice.resume()
+                        print(f"[TTS] Resumed: {player.current.title}")
                     except Exception as e:
                         print(f"Resume error: {e}")
 
                 else:
-                    # Gana nahi baj raha to direct TTS
+                    # Gana nahi baj raha to normal play
                     vc.play(discord.FFmpegPCMAudio(tts_file))
                     while vc.is_playing():
                         await asyncio.sleep(0.05)
 
             except Exception as e:
                 print(f"TTS Error: {e}")
+                import traceback
+                traceback.print_exc()
+                # Agar kuch gadbad hui to gana resume karne ki koshish karo
+                try:
+                    music_cog = self.bot.get_cog("Music")
+                    player = music_cog.get_player(gid) if music_cog else None
+                    if player and player.voice and player.voice.is_paused():
+                        player.voice.resume()
+                except: pass
 
         self.lock[gid] = False
 
