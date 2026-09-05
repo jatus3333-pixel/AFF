@@ -238,7 +238,6 @@ class Security(commands.Cog):
         )
 
 
-
     # ========================================================
     # MASTER OWNER CHECK
     # ========================================================
@@ -265,66 +264,83 @@ class Security(commands.Cog):
                 return True
 
         except (AttributeError, TypeError, ValueError) as e:
+
             print(
                 "[SECURITY] BOT OWNER ID CHECK ERROR:",
                 repr(e)
             )
+
 
         # ====================================================
         # MUST BE GUILD MEMBER FROM HERE
         # ====================================================
 
         if not isinstance(member, discord.Member):
+
             print(
                 f"[SECURITY] ❌ OWNER CHECK FAILED | "
                 f"Not a discord.Member: {type(member)}"
             )
+
             return False
+
 
         guild = member.guild
 
         if guild is None:
             return False
 
+
         # ====================================================
         # SERVER OWNER
         # ====================================================
 
         if member.id == guild.owner_id:
+
             print(
                 f"[SECURITY] ✅ SERVER OWNER DETECTED | "
                 f"{member} ({member.id})"
             )
+
             return True
+
 
         # ====================================================
         # DISCORD.PY BOT OWNER
         # ====================================================
 
         try:
+
             if await self.bot.is_owner(member):
+
                 print(
                     f"[SECURITY] ✅ DISCORD BOT OWNER DETECTED | "
                     f"{member} ({member.id})"
                 )
+
                 return True
 
         except Exception as e:
+
             print(
                 "[SECURITY] BOT OWNER API ERROR:",
                 repr(e)
             )
+
 
         # ====================================================
         # CONFIGURED OWNER ROLE
         # ====================================================
 
         if self.has_owner_role(member):
+
             print(
                 f"[SECURITY] ✅ OWNER ROLE DETECTED | "
                 f"{member} ({member.id})"
             )
+
             return True
+
 
         # ====================================================
         # FAILED
@@ -337,6 +353,7 @@ class Security(commands.Cog):
 
         return False
 
+
     # ========================================================
     # OWNER ERROR
     # ========================================================
@@ -344,6 +361,7 @@ class Security(commands.Cog):
     async def owner_only_message(self, ctx):
 
         try:
+
             await ctx.send(
                 "❌ **Only the Server Owner, Bot Owner, "
                 "or configured Owner Role can use this command.**",
@@ -352,6 +370,8 @@ class Security(commands.Cog):
 
         except Exception:
             pass
+
+
 
 
 
