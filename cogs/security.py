@@ -244,112 +244,23 @@ class Security(commands.Cog):
 
     async def is_owner(self, member):
 
-        if member is None:
-            print("[SECURITY] ❌ OWNER CHECK: member is None")
-            return False
-
-        # ====================================================
-        # BOT OWNER ID
-        # ====================================================
-
-        try:
-            user_id = int(member.id)
-
-            if user_id in BOT_OWNER_IDS:
-                print(
-                    f"[SECURITY] ✅ BOT OWNER DETECTED | "
-                    f"Name: {member} | "
-                    f"ID: {user_id}"
-                )
-                return True
-
-        except (AttributeError, TypeError, ValueError) as e:
-
-            print(
-                "[SECURITY] BOT OWNER ID CHECK ERROR:",
-                repr(e)
-            )
-
-
-        # ====================================================
-        # MUST BE GUILD MEMBER FROM HERE
-        # ====================================================
-
         if not isinstance(member, discord.Member):
-
-            print(
-                f"[SECURITY] ❌ OWNER CHECK FAILED | "
-                f"Not a discord.Member: {type(member)}"
-            )
-
             return False
 
-
-        guild = member.guild
-
-        if guild is None:
+        if member.guild is None:
             return False
 
-
-        # ====================================================
-        # SERVER OWNER
-        # ====================================================
-
-        if member.id == guild.owner_id:
-
-            print(
-                f"[SECURITY] ✅ SERVER OWNER DETECTED | "
-                f"{member} ({member.id})"
-            )
-
+        # Server owner
+        if member.id == member.guild.owner_id:
             return True
 
+        # Bot owner
+        if await self.is_bot_owner(member):
+            return True
 
-        # ====================================================
-        # DISCORD.PY BOT OWNER
-        # ====================================================
-
-        try:
-
-            if await self.bot.is_owner(member):
-
-                print(
-                    f"[SECURITY] ✅ DISCORD BOT OWNER DETECTED | "
-                    f"{member} ({member.id})"
-                )
-
-                return True
-
-        except Exception as e:
-
-            print(
-                "[SECURITY] BOT OWNER API ERROR:",
-                repr(e)
-            )
-
-
-        # ====================================================
-        # CONFIGURED OWNER ROLE
-        # ====================================================
-
+        # Owner role
         if self.has_owner_role(member):
-
-            print(
-                f"[SECURITY] ✅ OWNER ROLE DETECTED | "
-                f"{member} ({member.id})"
-            )
-
             return True
-
-
-        # ====================================================
-        # FAILED
-        # ====================================================
-
-        print(
-            f"[SECURITY] ❌ OWNER CHECK FAILED | "
-            f"{member} ({member.id})"
-        )
 
         return False
 
@@ -361,7 +272,6 @@ class Security(commands.Cog):
     async def owner_only_message(self, ctx):
 
         try:
-
             await ctx.send(
                 "❌ **Only the Server Owner, Bot Owner, "
                 "or configured Owner Role can use this command.**",
@@ -370,10 +280,6 @@ class Security(commands.Cog):
 
         except Exception:
             pass
-
-
-
-
 
 
     # ========================================================
@@ -861,162 +767,40 @@ class Security(commands.Cog):
     # ANTINUKE ENABLE
     # ========================================================
 
-   # ========================================================
-# ANTINUKE ENABLE
-# ========================================================
-
-# ============================================================
-# ANTINUKE COMMAND GROUP
-#
-# Supports:
-#
-# /antinuke enable
-# /antinuke disable
-#
-# !antinuke enable
-# !antinuke disable
-# ============================================================
-
-@commands.hybrid_group(
-    name="antinuke",
-    description="Manage HSL-CORP Anti-Nuke"
-)
-@commands.guild_only()
-async def antinuke(self, ctx):
-
-    # If user only types:
-    #
-    # /antinuke
-    # !antinuke
-    #
-    # show usage instead of doing anything.
-
-    await ctx.send(
-        "☢️ **Anti-Nuke Commands**\n\n"
-        "`/antinuke enable`\n"
-        "`/antinuke disable`\n\n"
-        "`!antinuke enable`\n"
-        "`!antinuke disable`",
-        delete_after=8
+    @commands.hybrid_command(
+        name="antinukeenable",
+        description="Enable HSL-CORP security"
     )
+    @commands.guild_only()
+    async def antinukeenable(self, ctx):
 
+        if not await self.is_owner(ctx.author):
+            return await self.owner_only_message(ctx)
 
-# ============================================================
-# ANTINUKE ENABLE
-# ============================================================
+        await self.security_animation(
+            ctx,
+            True
+        )
 
-@antinuke.command(
-    name="enable",
-    description="Enable Anti-Nuke"
-)
-async def antinuke_enable(self, ctx):
-
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("[SECURITY] ANTINUKE ENABLE")
-    print(f"[SECURITY] User: {ctx.author}")
-    print(f"[SECURITY] User ID: {ctx.author.id}")
-
-    if ctx.guild:
-        print(f"[SECURITY] Guild: {ctx.guild.name}")
-        print(f"[SECURITY] Guild ID: {ctx.guild.id}")
 
     # ========================================================
-    # OWNER CHECK
+    # ANTINUKE DISABLE
     # ========================================================
 
-    allowed = await self.is_owner(ctx.author)
-
-    print(
-        f"[SECURITY] ANTINUKE ENABLE OWNER RESULT: {allowed}"
+    @commands.hybrid_command(
+        name="antinukedisable",
+        description="Disable HSL-CORP security"
     )
+    @commands.guild_only()
+    async def antinukedisable(self, ctx):
 
-    if not allowed:
-        return await self.owner_only_message(ctx)
+        if not await self.is_owner(ctx):
+            return await self.owner_only_message(ctx)
 
-    # ========================================================
-    # ONLY ANTINUKE
-    # ========================================================
-
-    settings = self.get_settings(
-        ctx.guild.id
-    )
-
-    settings["antinuke"] = True
-
-    save_data(self.data)
-
-    # ========================================================
-    # SUCCESS
-    # ========================================================
-
-    await ctx.send(
-        "☢️ **HSL-CORP ANTI-NUKE ENABLED**\n"
-        "🟢 Anti-Nuke is now **ON**.",
-        delete_after=7
-    )
-
-    print(
-        "[SECURITY] ✅ Anti-Nuke enabled successfully."
-    )
-
-
-# ============================================================
-# ANTINUKE DISABLE
-# ============================================================
-
-@antinuke.command(
-    name="disable",
-    description="Disable Anti-Nuke"
-)
-async def antinuke_disable(self, ctx):
-
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("[SECURITY] ANTINUKE DISABLE")
-    print(f"[SECURITY] User: {ctx.author}")
-    print(f"[SECURITY] User ID: {ctx.author.id}")
-
-    if ctx.guild:
-        print(f"[SECURITY] Guild: {ctx.guild.name}")
-        print(f"[SECURITY] Guild ID: {ctx.guild.id}")
-
-    # ========================================================
-    # OWNER CHECK
-    # ========================================================
-
-    allowed = await self.is_owner(ctx.author)
-
-    print(
-        f"[SECURITY] ANTINUKE DISABLE OWNER RESULT: {allowed}"
-    )
-
-    if not allowed:
-        return await self.owner_only_message(ctx)
-
-    # ========================================================
-    # ONLY ANTINUKE
-    # ========================================================
-
-    settings = self.get_settings(
-        ctx.guild.id
-    )
-
-    settings["antinuke"] = False
-
-    save_data(self.data)
-
-    # ========================================================
-    # SUCCESS
-    # ========================================================
-
-    await ctx.send(
-        "☢️ **HSL-CORP ANTI-NUKE DISABLED**\n"
-        "🔴 Anti-Nuke is now **OFF**.",
-        delete_after=7
-    )
-
-    print(
-        "[SECURITY] 🔴 Anti-Nuke disabled successfully."
-    )
+        await self.security_animation(
+            ctx,
+            False
+        )
 
 
     # ========================================================
