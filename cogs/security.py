@@ -199,163 +199,104 @@ class Security(commands.Cog):
         return settings
 
 
-    # ========================================================
-    # BOT OWNER
-    # ========================================================
-
-    async def is_bot_owner(self, user):
-
-        if user is None:
-            return False
-
-        if user.id in BOT_OWNER_IDS:
-            return True
-
-        try:
-            return await self.bot.is_owner(user)
-
-        except Exception as e:
-            print(
-                "[SECURITY] BOT OWNER CHECK ERROR:",
-                repr(e)
-            )
-
-            return False
-
-
-    # ========================================================
-    # OWNER ROLE
-    # ========================================================
-
-    def has_owner_role(self, member):
-
-        if not isinstance(member, discord.Member):
-            return False
-
-        return any(
-            role.id in OWNER_ROLE_IDS
-            for role in member.roles
-        )
-
 
     # ========================================================
     # MASTER OWNER CHECK
     # ========================================================
 
-    # ========================================================
-# MASTER OWNER CHECK - FIXED
-# ========================================================
+    async def is_owner(self, member):
 
-async def is_owner(self, member):
+        if member is None:
+            print("[SECURITY] ❌ OWNER CHECK: member is None")
+            return False
 
-    if member is None:
-        print("[SECURITY] ❌ OWNER CHECK: member is None")
-        return False
+        # ====================================================
+        # BOT OWNER ID
+        # ====================================================
 
-    # ====================================================
-    # BOT OWNER ID
-    # ====================================================
-    # IMPORTANT:
-    # Check this BEFORE requiring discord.Member.
-    # This makes the check reliable for both User and Member.
+        try:
+            user_id = int(member.id)
 
-    try:
-        user_id = int(member.id)
+            if user_id in BOT_OWNER_IDS:
+                print(
+                    f"[SECURITY] ✅ BOT OWNER DETECTED | "
+                    f"Name: {member} | "
+                    f"ID: {user_id}"
+                )
+                return True
 
-        if user_id in BOT_OWNER_IDS:
-
+        except (AttributeError, TypeError, ValueError) as e:
             print(
-                f"[SECURITY] ✅ BOT OWNER DETECTED | "
-                f"Name: {member} | "
-                f"ID: {user_id}"
+                "[SECURITY] BOT OWNER ID CHECK ERROR:",
+                repr(e)
             )
 
+        # ====================================================
+        # MUST BE GUILD MEMBER FROM HERE
+        # ====================================================
+
+        if not isinstance(member, discord.Member):
+            print(
+                f"[SECURITY] ❌ OWNER CHECK FAILED | "
+                f"Not a discord.Member: {type(member)}"
+            )
+            return False
+
+        guild = member.guild
+
+        if guild is None:
+            return False
+
+        # ====================================================
+        # SERVER OWNER
+        # ====================================================
+
+        if member.id == guild.owner_id:
+            print(
+                f"[SECURITY] ✅ SERVER OWNER DETECTED | "
+                f"{member} ({member.id})"
+            )
             return True
 
-    except (AttributeError, TypeError, ValueError) as e:
+        # ====================================================
+        # DISCORD.PY BOT OWNER
+        # ====================================================
 
-        print(
-            "[SECURITY] BOT OWNER ID CHECK ERROR:",
-            repr(e)
-        )
+        try:
+            if await self.bot.is_owner(member):
+                print(
+                    f"[SECURITY] ✅ DISCORD BOT OWNER DETECTED | "
+                    f"{member} ({member.id})"
+                )
+                return True
 
-    # ====================================================
-    # MUST BE A GUILD MEMBER FROM HERE
-    # ====================================================
+        except Exception as e:
+            print(
+                "[SECURITY] BOT OWNER API ERROR:",
+                repr(e)
+            )
 
-    if not isinstance(member, discord.Member):
+        # ====================================================
+        # CONFIGURED OWNER ROLE
+        # ====================================================
+
+        if self.has_owner_role(member):
+            print(
+                f"[SECURITY] ✅ OWNER ROLE DETECTED | "
+                f"{member} ({member.id})"
+            )
+            return True
+
+        # ====================================================
+        # FAILED
+        # ====================================================
 
         print(
             f"[SECURITY] ❌ OWNER CHECK FAILED | "
-            f"Not a discord.Member: {type(member)}"
-        )
-
-        return False
-
-    guild = member.guild
-
-    if guild is None:
-        return False
-
-    # ====================================================
-    # SERVER OWNER
-    # ====================================================
-
-    if member.id == guild.owner_id:
-
-        print(
-            f"[SECURITY] ✅ SERVER OWNER DETECTED | "
             f"{member} ({member.id})"
         )
 
-        return True
-
-    # ====================================================
-    # DISCORD.PY BOT OWNER
-    # ====================================================
-
-    try:
-
-        if await self.bot.is_owner(member):
-
-            print(
-                f"[SECURITY] ✅ DISCORD BOT OWNER DETECTED | "
-                f"{member} ({member.id})"
-            )
-
-            return True
-
-    except Exception as e:
-
-        print(
-            "[SECURITY] BOT OWNER API ERROR:",
-            repr(e)
-        )
-
-    # ====================================================
-    # CONFIGURED OWNER ROLE
-    # ====================================================
-
-    if self.has_owner_role(member):
-
-        print(
-            f"[SECURITY] ✅ OWNER ROLE DETECTED | "
-            f"{member} ({member.id})"
-        )
-
-        return True
-
-    # ====================================================
-    # FAILED
-    # ====================================================
-
-    print(
-        f"[SECURITY] ❌ OWNER CHECK FAILED | "
-        f"{member} ({member.id})"
-    )
-
-    return False
-
+        return False
 
     # ========================================================
     # OWNER ERROR
@@ -372,6 +313,7 @@ async def is_owner(self, member):
 
         except Exception:
             pass
+
 
 
     # ========================================================
