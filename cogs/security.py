@@ -199,6 +199,45 @@ class Security(commands.Cog):
         return settings
 
 
+    # ========================================================
+    # BOT OWNER
+    # ========================================================
+
+    async def is_bot_owner(self, user):
+
+        if user is None:
+            return False
+
+        if user.id in BOT_OWNER_IDS:
+            return True
+
+        try:
+            return await self.bot.is_owner(user)
+
+        except Exception as e:
+            print(
+                "[SECURITY] BOT OWNER CHECK ERROR:",
+                repr(e)
+            )
+
+            return False
+
+
+    # ========================================================
+    # OWNER ROLE
+    # ========================================================
+
+    def has_owner_role(self, member):
+
+        if not isinstance(member, discord.Member):
+            return False
+
+        return any(
+            role.id in OWNER_ROLE_IDS
+            for role in member.roles
+        )
+
+
 
     # ========================================================
     # MASTER OWNER CHECK
@@ -313,6 +352,7 @@ class Security(commands.Cog):
 
         except Exception:
             pass
+
 
 
 
