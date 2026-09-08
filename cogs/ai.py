@@ -101,7 +101,7 @@ PERSONALITY:
 - Be respectful.
 
 IMAGE GENERATION DIRECTIVE:
-- If the user asks you to create, generate, draw, or send an image, graphic, poster, or photo, ALWAYS fulfill it by replying in this EXACT format:
+- If the user asks you to create, generate, draw, or send an image, graphic, logo, poster, or photo, ALWAYS fulfill it by including this EXACT tag in your reply:
   GENERATE_IMAGE: <detailed English image generation prompt>
 - Examples:
   User: "cyberpunk logo bana ke do" -> GENERATE_IMAGE: A high quality sleek futuristic mechanical cyberpunk logo with glowing neon blue accents on dark background.
@@ -374,7 +374,7 @@ IMAGE GENERATION DIRECTIVE:
 
 
     # ============================================================
-    # GENERATE IMAGE HELPER
+    # GENERATE IMAGE HELPER (WITH HEADERS & TIMEOUT)
     # ============================================================
 
     async def fetch_ai_image(self, prompt: str):
@@ -382,9 +382,16 @@ IMAGE GENERATION DIRECTIVE:
         def download():
             encoded_prompt = urllib.parse.quote(prompt)
             url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1080&nologo=true"
-            res = requests.get(url, timeout=30)
-            if res.status_code == 200:
-                return io.BytesIO(res.content)
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            try:
+                res = requests.get(url, headers=headers, timeout=40)
+                if res.status_code == 200:
+                    return io.BytesIO(res.content)
+            except Exception as e:
+                print(f"❌ Image download error: {e}", flush=True)
             return None
 
         return await asyncio.to_thread(download)
@@ -636,9 +643,10 @@ IMAGE GENERATION DIRECTIVE:
                 # CHECK IF AI WANTS TO GENERATE AN IMAGE
                 # =================================================
 
-                if reply.startswith("GENERATE_IMAGE:"):
+                if "GENERATE_IMAGE:" in reply:
 
-                    image_prompt = reply.replace("GENERATE_IMAGE:", "").strip()
+                    image_prompt = reply.split("GENERATE_IMAGE:")[1].strip()
+                    image_prompt = image_prompt.split("\n")[0]
 
                     print(
                         f"🎨 Generating image with prompt: {image_prompt}",
@@ -652,7 +660,7 @@ IMAGE GENERATION DIRECTIVE:
                         file = discord.File(image_bytes, filename="generated_image.png")
 
                         await message.reply(
-                            content=f"🎨 Ye lo aapki image:\n**Prompt:** {image_prompt}",
+                            content=f"🎨 Ye lo aapki HD image!\n**Prompt:** {image_prompt}",
                             file=file,
                             mention_author=False
                         )
@@ -682,7 +690,7 @@ IMAGE GENERATION DIRECTIVE:
 
                     else:
 
-                        reply = "Bhai image generate nahi ho payi, thodi der baad try kar 😅"
+                        reply = "Bhai image generation network issue ki wajah se fail ho gaya, ek baar firse prompt do 😅"
 
                 # =================================================
                 # SAVE MEMORY
