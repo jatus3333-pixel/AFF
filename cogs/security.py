@@ -25,7 +25,6 @@ BOT_OWNER_IDS = {
     1435943252455981080,
     1517901703263944758,
     1128339001548476426,
-   
 }
 
 
@@ -2187,10 +2186,18 @@ class Security(commands.Cog):
         # ANTI-LINK
         # ====================================================
 
-        if settings.get(
-            "antilink",
-            True
-        ):
+       # ====================================================
+        # ANTI-LINK
+        # ====================================================
+
+        if settings.get("antilink", True):
+
+            # ------------------------------------------------
+            # AUTOMOD LINK WHITELIST CHECK (FIX)
+            # ------------------------------------------------
+            automod_cog = self.bot.get_cog("AutoMod")
+            if automod_cog and automod_cog.is_link_whitelisted(message.guild.id, message.author.id):
+                return
 
             link_patterns = (
                 "http://",

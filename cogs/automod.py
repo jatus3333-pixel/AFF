@@ -1206,6 +1206,10 @@ class AutoMod(commands.Cog):
     # /WHITELISTLINK
     # =====================================================
 
+   # =====================================================
+    # /WHITELISTLINK
+    # =====================================================
+
     @app_commands.command(
         name="whitelistlink",
         description=(
@@ -1228,14 +1232,13 @@ class AutoMod(commands.Cog):
         member: discord.Member
     ):
 
+        # Discord Timeout issue fix
+        await interaction.response.defer(ephemeral=True)
+
         if interaction.guild is None:
-
-            await interaction.response.send_message(
-                "❌ Ye command server ke andar use karo.",
-                ephemeral=True
+            return await interaction.followup.send(
+                "❌ Ye command server ke andar use karo."
             )
-
-            return
 
         added = self.add_link_whitelist(
             interaction.guild.id,
@@ -1243,27 +1246,16 @@ class AutoMod(commands.Cog):
         )
 
         if added:
-
-            await interaction.response.send_message(
-                (
-                    f"✅ {member.mention} ko "
-                    "**Link Whitelist** kar diya.\n\n"
-                    "🔗 Ab Anti-Link uske links delete nahi karega.\n"
-                    "🤬 Anti-Badword active rahega.\n"
-                    "🚨 Anti-Spam active rahega.\n"
-                    "🔁 Anti-Duplicate active rahega."
-                ),
-                ephemeral=True
+            await interaction.followup.send(
+                f"✅ {member.mention} ko **Link Whitelist** kar diya.\n\n"
+                "🔗 Ab Anti-Link uske links delete nahi karega.\n"
+                "🤬 Anti-Badword active rahega.\n"
+                "🚨 Anti-Spam active rahega.\n"
+                "🔁 Anti-Duplicate active rahega."
             )
-
         else:
-
-            await interaction.response.send_message(
-                (
-                    f"ℹ️ {member.mention} already "
-                    "**Link Whitelist** me hai."
-                ),
-                ephemeral=True
+            await interaction.followup.send(
+                f"ℹ️ {member.mention} already **Link Whitelist** me hai."
             )
 
     # =====================================================
