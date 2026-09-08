@@ -2,6 +2,9 @@
 import json
 import time
 import asyncio
+import io
+import urllib.parse
+import requests
 
 import discord
 from discord.ext import commands
@@ -97,7 +100,12 @@ PERSONALITY:
 - Never claim you performed an action that you did not perform.
 - Be respectful.
 
-You are part of AFF-ARMY's Discord server.
+IMAGE GENERATION DIRECTIVE:
+- If the user asks you to create, generate, draw, or send an image, graphic, poster, or photo, ALWAYS fulfill it by replying in this EXACT format:
+  GENERATE_IMAGE: <detailed English image generation prompt>
+- Examples:
+  User: "cyberpunk logo bana ke do" -> GENERATE_IMAGE: A high quality sleek futuristic mechanical cyberpunk logo with glowing neon blue accents on dark background.
+  User: "send me image of a cat" -> GENERATE_IMAGE: A cute fluffy kitten playing in a garden, bright high quality digital art.
 """
 
         print(
@@ -366,6 +374,23 @@ You are part of AFF-ARMY's Discord server.
 
 
     # ============================================================
+    # GENERATE IMAGE HELPER
+    # ============================================================
+
+    async def fetch_ai_image(self, prompt: str):
+
+        def download():
+            encoded_prompt = urllib.parse.quote(prompt)
+            url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1080&nologo=true"
+            res = requests.get(url, timeout=30)
+            if res.status_code == 200:
+                return io.BytesIO(res.content)
+            return None
+
+        return await asyncio.to_thread(download)
+
+
+    # ============================================================
     # GEMINI REQUEST
     # ============================================================
 
@@ -473,10 +498,6 @@ You are part of AFF-ARMY's Discord server.
                         flush=True
                     )
 
-                    # =================================================
-                    # Retry temporary errors
-                    # =================================================
-
                     temporary_error = any(
                         x in error_text.lower()
                         for x in [
@@ -505,12 +526,7 @@ You are part of AFF-ARMY's Discord server.
 
                         continue
 
-                    # Non-temporary error
                     break
-
-            # =====================================================
-            # Move to fallback model
-            # =====================================================
 
             if model_index < len(
                 GEMINI_MODELS
@@ -525,10 +541,6 @@ You are part of AFF-ARMY's Discord server.
                 await asyncio.sleep(
                     1
                 )
-
-        # ========================================================
-        # EVERYTHING FAILED
-        # ========================================================
 
         if last_error:
 
@@ -619,6 +631,58 @@ You are part of AFF-ARMY's Discord server.
                     )
 
                     return
+
+                # =================================================
+                # CHECK IF AI WANTS TO GENERATE AN IMAGE
+                # =================================================
+
+                if reply.startswith("GENERATE_IMAGE:"):
+
+                    image_prompt = reply.replace("GENERATE_IMAGE:", "").strip()
+
+                    print(
+                        f"🎨 Generating image with prompt: {image_prompt}",
+                        flush=True
+                    )
+
+                    image_bytes = await self.fetch_ai_image(image_prompt)
+
+                    if image_bytes:
+
+                        file = discord.File(image_bytes, filename="generated_image.png")
+
+                        await message.reply(
+                            content=f"🎨 Ye lo aapki image:\n**Prompt:** {image_prompt}",
+                            file=file,
+                            mention_author=False
+                        )
+
+                        self.add_memory(
+                            guild_id,
+                            user_id,
+                            "user",
+                            content
+                        )
+
+                        self.add_memory(
+                            guild_id,
+                            user_id,
+                            "assistant",
+                            f"[Generated image for prompt: {image_prompt}]"
+                        )
+
+                        await self.save_data()
+
+                        print(
+                            "✅ AI Image generated and sent successfully",
+                            flush=True
+                        )
+
+                        return
+
+                    else:
+
+                        reply = "Bhai image generate nahi ho payi, thodi der baad try kar 😅"
 
                 # =================================================
                 # SAVE MEMORY
@@ -724,25 +788,13 @@ You are part of AFF-ARMY's Discord server.
             flush=True
         )
 
-        # ========================================================
-        # IGNORE BOTS
-        # ========================================================
-
         if message.author.bot:
 
             return
 
-        # ========================================================
-        # SERVER ONLY
-        # ========================================================
-
         if not message.guild:
 
             return
-
-        # ========================================================
-        # GLOBAL AI STATUS
-        # ========================================================
 
         if not self.data.get(
             "enabled",
@@ -751,17 +803,9 @@ You are part of AFF-ARMY's Discord server.
 
             return
 
-        # ========================================================
-        # IGNORE PREFIX COMMANDS
-        # ========================================================
-
         if message.content.startswith("!"):
 
             return
-
-        # ========================================================
-        # CHECK MENTION
-        # ========================================================
 
         mentioned = False
 
@@ -771,10 +815,6 @@ You are part of AFF-ARMY's Discord server.
                 self.bot.user
                 in message.mentions
             )
-
-        # ========================================================
-        # CHECK AI CHANNEL
-        # ========================================================
 
         ai_channel_id = self.data.get(
             "ai_channels",
@@ -789,10 +829,6 @@ You are part of AFF-ARMY's Discord server.
             == str(ai_channel_id)
         )
 
-        # ========================================================
-        # ONLY AI CHANNEL OR MENTION
-        # ========================================================
-
         if not mentioned and not is_ai_channel:
 
             return
@@ -803,10 +839,6 @@ You are part of AFF-ARMY's Discord server.
             f"AIChannel={is_ai_channel}",
             flush=True
         )
-
-        # ========================================================
-        # REMOVE BOT MENTION
-        # ========================================================
 
         content = message.content
 
@@ -872,10 +904,6 @@ You are part of AFF-ARMY's Discord server.
             interaction.guild.id
         )
 
-        # ========================================================
-        # DISABLE
-        # ========================================================
-
         if channel is None:
 
             self.data.setdefault(
@@ -901,10 +929,6 @@ You are part of AFF-ARMY's Discord server.
             )
 
             return
-
-        # ========================================================
-        # SET
-        # ========================================================
 
         self.data.setdefault(
             "ai_channels",
