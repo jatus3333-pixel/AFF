@@ -1,137 +1,862 @@
-
+import asyncio
 import discord
 from discord.ext import commands
 
 
 # ============================================================
-# TICKET BUTTON VIEW
+# HSL-CORP PROFESSIONAL TICKET SYSTEM
 # ============================================================
 
-class TicketPanel(discord.ui.View):
+TICKET_CATEGORY_NAME = "🎫 TICKETS"
+STAFF_ROLE_NAME = "🎫 Ticket Staff"
 
-    def __init__(self):
-        super().__init__(timeout=None)
 
-    @discord.ui.button(
-        label="Create Ticket",
-        emoji="🎫",
-        style=discord.ButtonStyle.primary,
-        custom_id="hsl_create_ticket"
+# ============================================================
+# HELPERS
+# ============================================================
+
+async def get_ticket_category(guild: discord.Guild):
+
+    category = discord.utils.get(
+        guild.categories,
+        name=TICKET_CATEGORY_NAME
     )
-    async def create_ticket(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
 
-        guild = interaction.guild
-        user = interaction.user
-
-        # Check existing ticket
-        for channel in guild.text_channels:
-
-            if channel.name == f"ticket-{user.id}":
-
-                await interaction.response.send_message(
-                    "❌ You already have an open ticket.",
-                    ephemeral=True
-                )
-
-                return
-
-        # Find / create category
-        category = discord.utils.get(
-            guild.categories,
-            name="🎫 TICKETS"
+    if category is None:
+        category = await guild.create_category(
+            TICKET_CATEGORY_NAME,
+            reason="HSL-CORP Ticket System"
         )
 
-        if category is None:
+    return category
 
-            category = await guild.create_category(
-                "🎫 TICKETS"
+
+async def get_staff_role(guild: discord.Guild):
+
+    role = discord.utils.get(
+        guild.roles,
+        name=STAFF_ROLE_NAME
+    )
+
+    if role is None:
+
+        role = await guild.create_role(
+            name=STAFF_ROLE_NAME,
+            reason="HSL-CORP Ticket Staff Role"
+        )
+
+    return role
+
+
+def is_staff(member: discord.Member):
+
+    if member.guild_permissions.administrator:
+        return True
+
+    if member.guild_permissions.manage_channels:
+        return True
+
+    if member.guild_permissions.manage_messages:
+        return True
+
+    return any(
+        role.name == STAFF_ROLE_NAME
+        for role in member.roles
+    )
+
+
+async def create_ticket_channel(
+    interaction: discord.Interaction,
+    ticket_type: str,
+    ticket_title: str,
+    ticket_description: str,
+    ticket_fields=None
+):
+
+    guild = interaction.guild
+    user = interaction.user
+
+    # --------------------------------------------------------
+    # EXISTING TICKET CHECK
+    # --------------------------------------------------------
+
+    for channel in guild.text_channels:
+
+        if channel.topic and f"Ticket Owner ID: {user.id}" in channel.topic:
+
+            await interaction.response.send_message(
+                "❌ You already have an open ticket.\n"
+                f"🎫 {channel.mention}",
+                ephemeral=True
             )
 
-        # Permissions
-        overwrites = {
+            return
 
-            guild.default_role:
-                discord.PermissionOverwrite(
-                    view_channel=False
-                ),
+    # --------------------------------------------------------
+    # CATEGORY + STAFF ROLE
+    # --------------------------------------------------------
 
-            user:
-                discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True,
-                    attach_files=True,
-                    embed_links=True
-                ),
+    category = await get_ticket_category(guild)
+    staff_role = await get_staff_role(guild)
 
-            guild.me:
-                discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True,
-                    manage_channels=True,
-                    manage_messages=True
+    # --------------------------------------------------------
+    # PERMISSIONS
+    # --------------------------------------------------------
+
+    overwrites = {
+
+        guild.default_role:
+            discord.PermissionOverwrite(
+                view_channel=False
+            ),
+
+        user:
+            discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=True,
+                embed_links=True
+            ),
+
+        staff_role:
+            discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=True,
+                embed_links=True,
+                manage_messages=True
+            ),
+
+        guild.me:
+            discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=True,
+                embed_links=True,
+                manage_channels=True,
+                manage_messages=True
+            )
+    }
+
+    # --------------------------------------------------------
+    # CHANNEL NAME
+    # --------------------------------------------------------
+
+    clean_name = ticket_type.lower()
+    clean_name = clean_name.replace(" ", "-")
+    clean_name = clean_name.replace("/", "-")
+
+    channel_name = f"{clean_name}-{user.id}"
+
+    # Discord channel name max is 100 chars
+    channel_name = channel_name[:95]
+
+    # --------------------------------------------------------
+    # CREATE CHANNEL
+    # --------------------------------------------------------
+
+    channel = await guild.create_text_channel(
+
+        name=channel_name,
+
+        category=category,
+
+        overwrites=overwrites,
+
+        topic=(
+            f"Ticket Owner ID: {user.id} | "
+            f"Ticket Type: {ticket_type}"
+        ),
+
+        reason=f"HSL-CORP Ticket opened by {user}"
+    )
+
+    # --------------------------------------------------------
+    # MAIN TICKET EMBED
+    # --------------------------------------------------------
+
+    embed = discord.Embed(
+
+        title=f"🎫 {ticket_title}",
+
+        description=ticket_description,
+
+        color=discord.Color.from_rgb(
+            20,
+            20,
+            25
+        )
+    )
+
+    embed.add_field(
+        name="👤 PLAYER",
+        value=user.mention,
+        inline=True
+    )
+
+    embed.add_field(
+        name="📂 CATEGORY",
+        value=f"`{ticket_type}`",
+        inline=True
+    )
+
+    embed.add_field(
+        name="🟢 STATUS",
+        value="`OPEN`",
+        inline=True
+    )
+
+    if ticket_fields:
+
+        for field_name, field_value in ticket_fields:
+
+            embed.add_field(
+                name=field_name,
+                value=field_value,
+                inline=False
+            )
+
+    embed.add_field(
+        name="📸 SCREENSHOT / PROOF",
+        value=(
+            "Please upload your **screenshot/proof below**.\n"
+            "You can simply drag & drop the image into this ticket."
+        ),
+        inline=False
+    )
+
+    embed.set_footer(
+        text="HSL-CORP • Professional Support System"
+    )
+
+    # --------------------------------------------------------
+    # STAFF PANEL
+    # --------------------------------------------------------
+
+    staff_embed = discord.Embed(
+
+        title="🛡️ STAFF CONTROL PANEL",
+
+        description=(
+            "**Staff members:**\n"
+            "Use the buttons below to manage this ticket.\n\n"
+            "🙋 **Claim** → Take responsibility for this ticket\n"
+            "🔒 **Close** → Close the ticket\n"
+            "🗑️ **Delete** → Delete after closing"
+        ),
+
+        color=discord.Color.dark_grey()
+    )
+
+    # --------------------------------------------------------
+    # SEND
+    # --------------------------------------------------------
+
+    await channel.send(
+        content=(
+            f"{user.mention} <@&{staff_role.id}>"
+        ),
+        embed=embed,
+        view=TicketControls()
+    )
+
+    await channel.send(
+        embed=staff_embed
+    )
+
+    await interaction.response.send_message(
+        f"✅ Your ticket has been created!\n🎫 {channel.mention}",
+        ephemeral=True
+    )
+
+
+# ============================================================
+# FF PLAYER STATS MODAL
+# ============================================================
+
+class FFStatsModal(discord.ui.Modal, title="🎮 Free Fire Player Profile"):
+
+    ff_uid = discord.ui.TextInput(
+
+        label="Free Fire UID",
+
+        placeholder="Enter your Free Fire UID",
+
+        required=True,
+
+        max_length=30
+    )
+
+    kd = discord.ui.TextInput(
+
+        label="KD / Kills",
+
+        placeholder="Example: 3.45 KD",
+
+        required=True,
+
+        max_length=50
+    )
+
+    headshot = discord.ui.TextInput(
+
+        label="Headshot Rate",
+
+        placeholder="Example: 28.5%",
+
+        required=True,
+
+        max_length=50
+    )
+
+    rank = discord.ui.TextInput(
+
+        label="Current Rank",
+
+        placeholder="Example: Grandmaster / Heroic",
+
+        required=True,
+
+        max_length=100
+    )
+
+    requirement = discord.ui.TextInput(
+
+        label="What do you need?",
+
+        placeholder="Example: 1v4 / Profile Check / Tournament",
+
+        style=discord.TextStyle.paragraph,
+
+        required=True,
+
+        max_length=500
+    )
+
+    async def on_submit(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        fields = [
+
+            (
+                "🆔 FREE FIRE UID",
+                f"`{self.ff_uid.value}`"
+            ),
+
+            (
+                "📊 KD",
+                f"`{self.kd.value}`"
+            ),
+
+            (
+                "🎯 HEADSHOT RATE",
+                f"`{self.headshot.value}`"
+            ),
+
+            (
+                "🏆 CURRENT RANK",
+                f"`{self.rank.value}`"
+            ),
+
+            (
+                "📋 REQUEST",
+                self.requirement.value
+            )
+        ]
+
+        await create_ticket_channel(
+
+            interaction=interaction,
+
+            ticket_type="FF Player Stats",
+
+            ticket_title="🎮 FREE FIRE PLAYER PROFILE",
+
+            ticket_description=(
+                "Welcome to **HSL-CORP Free Fire Support**.\n\n"
+                "Your player information has been submitted "
+                "to the staff team.\n\n"
+                "📸 **Please upload your latest FF profile/"
+                "stats screenshot below.**"
+            ),
+
+            ticket_fields=fields
+        )
+
+
+# ============================================================
+# 1V4 MODAL
+# ============================================================
+
+class FF1v4Modal(discord.ui.Modal, title="🔥 1v4 Challenge Request"):
+
+    ff_uid = discord.ui.TextInput(
+        label="Free Fire UID",
+        placeholder="Enter your FF UID",
+        required=True,
+        max_length=30
+    )
+
+    player_name = discord.ui.TextInput(
+        label="Player Name",
+        placeholder="Your in-game name",
+        required=True,
+        max_length=100
+    )
+
+    kd = discord.ui.TextInput(
+        label="KD / Headshot",
+        placeholder="Example: 4.2 KD / 31% HS",
+        required=True,
+        max_length=100
+    )
+
+    challenge = discord.ui.TextInput(
+        label="Challenge Details",
+        placeholder="Explain what 1v4 challenge you want",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=500
+    )
+
+    async def on_submit(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        fields = [
+
+            (
+                "🆔 FF UID",
+                f"`{self.ff_uid.value}`"
+            ),
+
+            (
+                "👤 PLAYER",
+                self.player_name.value
+            ),
+
+            (
+                "📊 KD / HS",
+                self.kd.value
+            ),
+
+            (
+                "🔥 CHALLENGE",
+                self.challenge.value
+            )
+        ]
+
+        await create_ticket_channel(
+
+            interaction,
+
+            "1v4 Challenge",
+
+            "🔥 FREE FIRE 1v4 CHALLENGE",
+
+            (
+                "Welcome to the **HSL-CORP 1v4 Challenge**.\n\n"
+                "Staff will review your request and "
+                "coordinate the challenge."
+            ),
+
+            fields
+        )
+
+
+# ============================================================
+# 1V1 MODAL
+# ============================================================
+
+class FF1v1Modal(discord.ui.Modal, title="⚔️ 1v1 Challenge Request"):
+
+    ff_uid = discord.ui.TextInput(
+        label="Free Fire UID",
+        placeholder="Enter your FF UID",
+        required=True,
+        max_length=30
+    )
+
+    opponent = discord.ui.TextInput(
+        label="Opponent UID / Name",
+        placeholder="Opponent information",
+        required=True,
+        max_length=100
+    )
+
+    mode = discord.ui.TextInput(
+        label="Mode",
+        placeholder="Example: CS / BR / Custom",
+        required=True,
+        max_length=100
+    )
+
+    details = discord.ui.TextInput(
+        label="Challenge Details",
+        placeholder="Rules or other requirements",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=500
+    )
+
+    async def on_submit(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        fields = [
+
+            (
+                "🆔 YOUR UID",
+                f"`{self.ff_uid.value}`"
+            ),
+
+            (
+                "⚔️ OPPONENT",
+                self.opponent.value
+            ),
+
+            (
+                "🎮 MODE",
+                self.mode.value
+            ),
+
+            (
+                "📋 DETAILS",
+                self.details.value
+            )
+        ]
+
+        await create_ticket_channel(
+
+            interaction,
+
+            "1v1 Challenge",
+
+            "⚔️ FREE FIRE 1v1 CHALLENGE",
+
+            (
+                "Welcome to the **HSL-CORP 1v1 Challenge**.\n\n"
+                "Staff will check the challenge details "
+                "and assist you."
+            ),
+
+            fields
+        )
+
+
+# ============================================================
+# TOURNAMENT MODAL
+# ============================================================
+
+class TournamentModal(
+    discord.ui.Modal,
+    title="🏆 Tournament Support"
+):
+
+    ff_uid = discord.ui.TextInput(
+        label="Free Fire UID",
+        placeholder="Enter your FF UID",
+        required=True,
+        max_length=30
+    )
+
+    team = discord.ui.TextInput(
+        label="Team / Squad Name",
+        placeholder="Enter team name",
+        required=True,
+        max_length=100
+    )
+
+    players = discord.ui.TextInput(
+        label="Number of Players",
+        placeholder="Example: 4",
+        required=True,
+        max_length=20
+    )
+
+    details = discord.ui.TextInput(
+        label="Tournament Requirement",
+        placeholder="Explain what you need",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=500
+    )
+
+    async def on_submit(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        fields = [
+
+            (
+                "🆔 FF UID",
+                f"`{self.ff_uid.value}`"
+            ),
+
+            (
+                "🏆 TEAM",
+                self.team.value
+            ),
+
+            (
+                "👥 PLAYERS",
+                self.players.value
+            ),
+
+            (
+                "📋 REQUIREMENT",
+                self.details.value
+            )
+        ]
+
+        await create_ticket_channel(
+
+            interaction,
+
+            "Tournament",
+
+            "🏆 TOURNAMENT SUPPORT",
+
+            (
+                "Welcome to **HSL-CORP Tournament Support**.\n\n"
+                "Staff will assist you with your tournament request."
+            ),
+
+            fields
+        )
+
+
+# ============================================================
+# OTHER SUPPORT MODAL
+# ============================================================
+
+class OtherSupportModal(
+    discord.ui.Modal,
+    title="🛠️ Other Support"
+):
+
+    subject = discord.ui.TextInput(
+        label="Subject",
+        placeholder="What do you need help with?",
+        required=True,
+        max_length=150
+    )
+
+    details = discord.ui.TextInput(
+        label="Details",
+        placeholder="Explain your issue in detail",
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=1000
+    )
+
+    async def on_submit(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        fields = [
+
+            (
+                "📌 SUBJECT",
+                self.subject.value
+            ),
+
+            (
+                "📝 DETAILS",
+                self.details.value
+            )
+        ]
+
+        await create_ticket_channel(
+
+            interaction,
+
+            "Other Support",
+
+            "🛠️ GENERAL SUPPORT",
+
+            (
+                "Welcome to **HSL-CORP Support**.\n\n"
+                "A staff member will review your request."
+            ),
+
+            fields
+        )
+
+
+# ============================================================
+# TICKET DROPDOWN
+# ============================================================
+
+class TicketDropdown(
+    discord.ui.Select
+):
+
+    def __init__(self):
+
+        options = [
+
+            discord.SelectOption(
+                label="FF Player Profile / Stats",
+                description="Submit your Free Fire profile & stats",
+                emoji="🎮",
+                value="stats"
+            ),
+
+            discord.SelectOption(
+                label="1v1 Challenge",
+                description="Request a Free Fire 1v1",
+                emoji="⚔️",
+                value="1v1"
+            ),
+
+            discord.SelectOption(
+                label="1v4 Challenge",
+                description="Request a Free Fire 1v4",
+                emoji="🔥",
+                value="1v4"
+            ),
+
+            discord.SelectOption(
+                label="Tournament",
+                description="Tournament / esports support",
+                emoji="🏆",
+                value="tournament"
+            ),
+
+            discord.SelectOption(
+                label="Live Stream Support",
+                description="Support related to a live stream",
+                emoji="📺",
+                value="live"
+            ),
+
+            discord.SelectOption(
+                label="Other Support",
+                description="Any other support request",
+                emoji="🛠️",
+                value="other"
+            )
+        ]
+
+        super().__init__(
+
+            placeholder="🎮 Select your support type...",
+
+            min_values=1,
+
+            max_values=1,
+
+            options=options,
+
+            custom_id="hsl_ticket_dropdown"
+        )
+
+    async def callback(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        value = self.values[0]
+
+        # ----------------------------------------------------
+        # FF STATS
+        # ----------------------------------------------------
+
+        if value == "stats":
+
+            await interaction.response.send_modal(
+                FFStatsModal()
+            )
+
+        # ----------------------------------------------------
+        # 1V1
+        # ----------------------------------------------------
+
+        elif value == "1v1":
+
+            await interaction.response.send_modal(
+                FF1v1Modal()
+            )
+
+        # ----------------------------------------------------
+        # 1V4
+        # ----------------------------------------------------
+
+        elif value == "1v4":
+
+            await interaction.response.send_modal(
+                FF1v4Modal()
+            )
+
+        # ----------------------------------------------------
+        # TOURNAMENT
+        # ----------------------------------------------------
+
+        elif value == "tournament":
+
+            await interaction.response.send_modal(
+                TournamentModal()
+            )
+
+        # ----------------------------------------------------
+        # LIVE STREAM
+        # ----------------------------------------------------
+
+        elif value == "live":
+
+            await create_ticket_channel(
+
+                interaction,
+
+                "Live Stream",
+
+                "📺 LIVE STREAM SUPPORT",
+
+                (
+                    "Welcome to **HSL-CORP Live Stream Support**.\n\n"
+                    "Please explain what happened during the "
+                    "live stream and upload any relevant "
+                    "screenshots/proof."
                 )
-        }
+            )
 
-        # Create channel
-        channel = await guild.create_text_channel(
+        # ----------------------------------------------------
+        # OTHER
+        # ----------------------------------------------------
 
-            name=f"ticket-{user.id}",
+        elif value == "other":
 
-            category=category,
+            await interaction.response.send_modal(
+                OtherSupportModal()
+            )
 
-            overwrites=overwrites,
 
-            topic=f"Ticket opened by {user} ({user.id})"
+# ============================================================
+# TICKET PANEL
+# ============================================================
+
+class TicketPanel(
+    discord.ui.View
+):
+
+    def __init__(self):
+
+        super().__init__(
+            timeout=None
         )
 
-        # Ticket embed
-        embed = discord.Embed(
-
-            title="🎫 HSL SUPPORT",
-
-            description=(
-                f"Welcome {user.mention}!\n\n"
-                "Please describe your issue below.\n"
-                "A staff member will assist you shortly."
-            ),
-
-            color=discord.Color.blurple()
-        )
-
-        embed.add_field(
-            name="👤 User",
-            value=user.mention,
-            inline=True
-        )
-
-        embed.add_field(
-            name="📅 Opened",
-            value=discord.utils.format_dt(
-                discord.utils.utcnow(),
-                style="F"
-            ),
-            inline=True
-        )
-
-        embed.set_footer(
-            text="HSL SECURITY • Support System"
-        )
-
-        await channel.send(
-            content=user.mention,
-            embed=embed,
-            view=TicketControls()
-        )
-
-        await interaction.response.send_message(
-            f"✅ Ticket created: {channel.mention}",
-            ephemeral=True
+        self.add_item(
+            TicketDropdown()
         )
 
 
@@ -139,81 +864,19 @@ class TicketPanel(discord.ui.View):
 # TICKET CONTROL BUTTONS
 # ============================================================
 
-class TicketControls(discord.ui.View):
+class TicketControls(
+    discord.ui.View
+):
 
     def __init__(self):
-        super().__init__(timeout=None)
 
-    # --------------------------------------------------------
-    # CLOSE
-    # --------------------------------------------------------
-
-    @discord.ui.button(
-        label="Close Ticket",
-        emoji="🔒",
-        style=discord.ButtonStyle.secondary,
-        custom_id="hsl_close_ticket"
-    )
-    async def close_ticket(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-
-        channel = interaction.channel
-
-        # Disable ticket for everyone
-        await channel.set_permissions(
-            interaction.guild.default_role,
-            view_channel=False
+        super().__init__(
+            timeout=None
         )
 
-        # Try to identify ticket owner
-        topic = channel.topic or ""
-
-        if "Ticket opened by" in topic:
-
-            try:
-
-                user_id = int(
-                    topic.split("(")[-1].split(")")[0]
-                )
-
-                user = interaction.guild.get_member(
-                    user_id
-                )
-
-                if user:
-
-                    await channel.set_permissions(
-                        user,
-                        view_channel=False,
-                        send_messages=False
-                    )
-
-            except Exception:
-                pass
-
-        embed = discord.Embed(
-
-            title="🔒 TICKET CLOSED",
-
-            description=(
-                "This ticket has been closed.\n\n"
-                "Staff can delete it when finished."
-            ),
-
-            color=discord.Color.orange()
-        )
-
-        await interaction.response.send_message(
-            embed=embed,
-            view=ClosedTicketControls()
-        )
-
-    # --------------------------------------------------------
+    # ========================================================
     # CLAIM
-    # --------------------------------------------------------
+    # ========================================================
 
     @discord.ui.button(
         label="Claim",
@@ -227,23 +890,130 @@ class TicketControls(discord.ui.View):
         button: discord.ui.Button
     ):
 
+        if not is_staff(interaction.user):
+
+            await interaction.response.send_message(
+                "❌ Only **Ticket Staff** can claim tickets.",
+                ephemeral=True
+            )
+
+            return
+
+        button.disabled = True
+
         embed = discord.Embed(
 
             title="🙋 TICKET CLAIMED",
 
             description=(
                 f"This ticket has been claimed by "
-                f"{interaction.user.mention}."
+                f"{interaction.user.mention}.\n\n"
+                "🛡️ Staff is now handling this ticket."
             ),
 
             color=discord.Color.green()
         )
 
-        button.disabled = True
-
         await interaction.response.edit_message(
             embed=embed,
             view=self
+        )
+
+        await interaction.channel.send(
+            f"🙋 {interaction.user.mention} has claimed this ticket."
+        )
+
+    # ========================================================
+    # CLOSE
+    # ========================================================
+
+    @discord.ui.button(
+        label="Close",
+        emoji="🔒",
+        style=discord.ButtonStyle.secondary,
+        custom_id="hsl_close_ticket"
+    )
+    async def close_ticket(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        if not is_staff(interaction.user):
+
+            await interaction.response.send_message(
+                "❌ Only **Ticket Staff** can close tickets.",
+                ephemeral=True
+            )
+
+            return
+
+        channel = interaction.channel
+
+        # ----------------------------------------------------
+        # GET OWNER
+        # ----------------------------------------------------
+
+        topic = channel.topic or ""
+
+        owner_id = None
+
+        if "Ticket Owner ID:" in topic:
+
+            try:
+
+                owner_id = int(
+                    topic.split("Ticket Owner ID:")[1]
+                    .split("|")[0]
+                    .strip()
+                )
+
+            except Exception:
+                owner_id = None
+
+        # ----------------------------------------------------
+        # REMOVE USER ACCESS
+        # ----------------------------------------------------
+
+        if owner_id:
+
+            user = interaction.guild.get_member(
+                owner_id
+            )
+
+            if user:
+
+                await channel.set_permissions(
+
+                    user,
+
+                    view_channel=False,
+
+                    send_messages=False,
+
+                    attach_files=False
+                )
+
+        # ----------------------------------------------------
+        # CLOSED STATUS
+        # ----------------------------------------------------
+
+        embed = discord.Embed(
+
+            title="🔒 TICKET CLOSED",
+
+            description=(
+                "This ticket has been closed by "
+                f"{interaction.user.mention}.\n\n"
+                "🛡️ Staff can delete the ticket when finished."
+            ),
+
+            color=discord.Color.orange()
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            view=ClosedTicketControls()
         )
 
 
@@ -251,13 +1021,106 @@ class TicketControls(discord.ui.View):
 # CLOSED TICKET CONTROLS
 # ============================================================
 
-class ClosedTicketControls(discord.ui.View):
+class ClosedTicketControls(
+    discord.ui.View
+):
 
     def __init__(self):
-        super().__init__(timeout=None)
+
+        super().__init__(
+            timeout=None
+        )
+
+    # ========================================================
+    # REOPEN
+    # ========================================================
 
     @discord.ui.button(
-        label="Delete Ticket",
+        label="Reopen",
+        emoji="🔓",
+        style=discord.ButtonStyle.success,
+        custom_id="hsl_reopen_ticket"
+    )
+    async def reopen_ticket(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        if not is_staff(interaction.user):
+
+            await interaction.response.send_message(
+                "❌ Only **Ticket Staff** can reopen tickets.",
+                ephemeral=True
+            )
+
+            return
+
+        channel = interaction.channel
+
+        topic = channel.topic or ""
+
+        owner_id = None
+
+        if "Ticket Owner ID:" in topic:
+
+            try:
+
+                owner_id = int(
+                    topic.split("Ticket Owner ID:")[1]
+                    .split("|")[0]
+                    .strip()
+                )
+
+            except Exception:
+                pass
+
+        if owner_id:
+
+            user = interaction.guild.get_member(
+                owner_id
+            )
+
+            if user:
+
+                await channel.set_permissions(
+
+                    user,
+
+                    view_channel=True,
+
+                    send_messages=True,
+
+                    read_message_history=True,
+
+                    attach_files=True,
+
+                    embed_links=True
+                )
+
+        embed = discord.Embed(
+
+            title="🔓 TICKET REOPENED",
+
+            description=(
+                f"This ticket has been reopened by "
+                f"{interaction.user.mention}."
+            ),
+
+            color=discord.Color.green()
+        )
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=TicketControls()
+        )
+
+    # ========================================================
+    # DELETE
+    # ========================================================
+
+    @discord.ui.button(
+        label="Delete",
         emoji="🗑️",
         style=discord.ButtonStyle.danger,
         custom_id="hsl_delete_ticket"
@@ -268,10 +1131,21 @@ class ClosedTicketControls(discord.ui.View):
         button: discord.ui.Button
     ):
 
+        if not is_staff(interaction.user):
+
+            await interaction.response.send_message(
+                "❌ Only **Ticket Staff** can delete tickets.",
+                ephemeral=True
+            )
+
+            return
+
         await interaction.response.send_message(
             "🗑️ Deleting ticket...",
             ephemeral=True
         )
+
+        await asyncio.sleep(1)
 
         await interaction.channel.delete(
             reason=f"Ticket deleted by {interaction.user}"
@@ -282,19 +1156,21 @@ class ClosedTicketControls(discord.ui.View):
 # TICKET COG
 # ============================================================
 
-class Ticket(commands.Cog):
+class Ticket(
+    commands.Cog
+):
 
     def __init__(self, bot):
 
         self.bot = bot
 
-    # --------------------------------------------------------
+    # ========================================================
     # TICKET PANEL COMMAND
-    # --------------------------------------------------------
+    # ========================================================
 
     @commands.hybrid_command(
         name="ticketpanel",
-        description="Create the support ticket panel"
+        description="Create the HSL-CORP professional ticket panel"
     )
     @commands.has_permissions(
         administrator=True
@@ -306,32 +1182,58 @@ class Ticket(commands.Cog):
 
         embed = discord.Embed(
 
-            title="🎫 HSL SUPPORT CENTER",
+            title="🎫 HSL-CORP SUPPORT CENTER",
 
             description=(
-                "**Need assistance?**\n\n"
-                "Click the button below to create a "
-                "private support ticket.\n\n"
-                "Our staff will assist you as soon as possible."
+                "## ⚡ WELCOME TO HSL-CORP\n\n"
+
+                "Need help with **Free Fire, challenges, "
+                "tournaments or other services?**\n\n"
+
+                "Use the dropdown below and select the "
+                "support category that matches your request.\n\n"
+
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+                "🎮 **FF PLAYER PROFILE / STATS**\n"
+                "Submit your UID, KD, Headshot Rate, Rank "
+                "and profile screenshot.\n\n"
+
+                "⚔️ **1v1 CHALLENGE**\n"
+                "Request a custom 1v1 challenge.\n\n"
+
+                "🔥 **1v4 CHALLENGE**\n"
+                "Request a 1v4 challenge.\n\n"
+
+                "🏆 **TOURNAMENT**\n"
+                "Tournament and esports support.\n\n"
+
+                "📺 **LIVE STREAM SUPPORT**\n"
+                "Support for issues related to a live stream.\n\n"
+
+                "🛠️ **OTHER SUPPORT**\n"
+                "Anything else you need help with.\n\n"
+
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+                "🔒 **PRIVATE TICKET**\n"
+                "Your ticket is visible only to you and "
+                "the HSL-CORP staff team.\n\n"
+
+                "📸 **PROOF / SCREENSHOTS**\n"
+                "You can upload screenshots directly inside "
+                "your private ticket."
             ),
 
-            color=discord.Color.blurple()
-        )
-
-        embed.add_field(
-            name="📌 Support",
-            value="Create a private ticket for assistance.",
-            inline=False
-        )
-
-        embed.add_field(
-            name="🔒 Privacy",
-            value="Only you and staff can access your ticket.",
-            inline=False
+            color=discord.Color.from_rgb(
+                88,
+                101,
+                242
+            )
         )
 
         embed.set_footer(
-            text="HSL SECURITY • Support System"
+            text="HSL-CORP • Professional Gaming Support"
         )
 
         await ctx.send(
@@ -350,7 +1252,10 @@ async def setup(bot):
         Ticket(bot)
     )
 
-    # Persistent buttons
+    # --------------------------------------------------------
+    # PERSISTENT VIEWS
+    # --------------------------------------------------------
+
     bot.add_view(
         TicketPanel()
     )
