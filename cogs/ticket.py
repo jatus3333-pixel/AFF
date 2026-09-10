@@ -4,7 +4,7 @@ from discord.ext import commands
 
 
 # ============================================================
-# HSL-CORP PROFESSIONAL TICKET SYSTEM
+# AFF-ARMY PROFESSIONAL TICKET SYSTEM
 # ============================================================
 
 TICKET_CATEGORY_NAME = "🎫 TICKETS"
@@ -25,7 +25,7 @@ async def get_ticket_category(guild: discord.Guild):
     if category is None:
         category = await guild.create_category(
             TICKET_CATEGORY_NAME,
-            reason="HSL-CORP Ticket System"
+            reason="AFF-ARMY Ticket System"
         )
 
     return category
@@ -42,7 +42,7 @@ async def get_staff_role(guild: discord.Guild):
 
         role = await guild.create_role(
             name=STAFF_ROLE_NAME,
-            reason="HSL-CORP Ticket Staff Role"
+            reason="AFF-ARMY Ticket Staff Role"
         )
 
     return role
@@ -171,7 +171,7 @@ async def create_ticket_channel(
             f"Ticket Type: {ticket_type}"
         ),
 
-        reason=f"HSL-CORP Ticket opened by {user}"
+        reason=f"AFF ARMY Ticket opened by {user}"
     )
 
     # --------------------------------------------------------
@@ -229,7 +229,7 @@ async def create_ticket_channel(
     )
 
     embed.set_footer(
-        text="HSL-CORP • Professional Support System"
+        text="AFF-ARMY • Professional Support System"
     )
 
     # --------------------------------------------------------
@@ -378,7 +378,7 @@ class FFStatsModal(discord.ui.Modal, title="🎮 Free Fire Player Profile"):
             ticket_title="🎮 FREE FIRE PLAYER PROFILE",
 
             ticket_description=(
-                "Welcome to **HSL-CORP Free Fire Support**.\n\n"
+                "Welcome to **AFF ARMY Free Fire Support**.\n\n"
                 "Your player information has been submitted "
                 "to the staff team.\n\n"
                 "📸 **Please upload your latest FF profile/"
@@ -461,7 +461,7 @@ class FF1v4Modal(discord.ui.Modal, title="🔥 1v4 Challenge Request"):
             "🔥 FREE FIRE 1v4 CHALLENGE",
 
             (
-                "Welcome to the **HSL-CORP 1v4 Challenge**.\n\n"
+                "Welcome to the **AFF-ARMY 1v4 Challenge**.\n\n"
                 "Staff will review your request and "
                 "coordinate the challenge."
             ),
@@ -542,7 +542,7 @@ class FF1v1Modal(discord.ui.Modal, title="⚔️ 1v1 Challenge Request"):
             "⚔️ FREE FIRE 1v1 CHALLENGE",
 
             (
-                "Welcome to the **HSL-CORP 1v1 Challenge**.\n\n"
+                "Welcome to the **AFF ARMY 1v1 Challenge**.\n\n"
                 "Staff will check the challenge details "
                 "and assist you."
             ),
@@ -626,7 +626,7 @@ class TournamentModal(
             "🏆 TOURNAMENT SUPPORT",
 
             (
-                "Welcome to **HSL-CORP Tournament Support**.\n\n"
+                "Welcome to **AFF-ARMY Tournament Support**.\n\n"
                 "Staff will assist you with your tournament request."
             ),
 
@@ -685,7 +685,7 @@ class OtherSupportModal(
             "🛠️ GENERAL SUPPORT",
 
             (
-                "Welcome to **HSL-CORP Support**.\n\n"
+                "Welcome to **AFF-ARMY Support**.\n\n"
                 "A staff member will review your request."
             ),
 
@@ -823,7 +823,7 @@ class TicketDropdown(
                 "📺 LIVE STREAM SUPPORT",
 
                 (
-                    "Welcome to **HSL-CORP Live Stream Support**.\n\n"
+                    "Welcome to **AFF-ARMY Live Stream Support**.\n\n"
                     "Please explain what happened during the "
                     "live stream and upload any relevant "
                     "screenshots/proof."
@@ -1170,7 +1170,7 @@ class Ticket(
 
     @commands.hybrid_command(
         name="ticketpanel",
-        description="Create the HSL-CORP professional ticket panel"
+        description="Create the AFF-ARMY professional ticket panel"
     )
     @commands.has_permissions(
         administrator=True
@@ -1182,10 +1182,10 @@ class Ticket(
 
         embed = discord.Embed(
 
-            title="🎫 HSL-CORP SUPPORT CENTER",
+            title="🎫 AFF-ARMY SUPPORT CENTER",
 
             description=(
-                "## ⚡ WELCOME TO HSL-CORP\n\n"
+                "## ⚡ WELCOME TO AFF-ARMY\n\n"
 
                 "Need help with **Free Fire, challenges, "
                 "tournaments or other services?**\n\n"
@@ -1218,7 +1218,7 @@ class Ticket(
 
                 "🔒 **PRIVATE TICKET**\n"
                 "Your ticket is visible only to you and "
-                "the HSL-CORP staff team.\n\n"
+                "the AFF-ARMY staff team.\n\n"
 
                 "📸 **PROOF / SCREENSHOTS**\n"
                 "You can upload screenshots directly inside "
@@ -1233,7 +1233,7 @@ class Ticket(
         )
 
         embed.set_footer(
-            text="HSL-CORP • Professional Gaming Support"
+            text="AFF-ARMY • Professional Gaming Support"
         )
 
         await ctx.send(
