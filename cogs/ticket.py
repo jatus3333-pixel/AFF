@@ -70,9 +70,7 @@ def is_staff(member: discord.Member):
 # FF STATS SCREENSHOT UPLOAD VIEW
 # ============================================================
 
-class FFStatsScreenshotView(
-    discord.ui.View
-):
+class FFStatsScreenshotView(discord.ui.View):
 
     def __init__(self, bot):
 
@@ -148,6 +146,37 @@ class FFStatsScreenshotView(
             )
 
             return
+
+        # ----------------------------------------------------
+        # CHECK BOT PERMISSIONS
+        # ----------------------------------------------------
+
+        bot_member = guild_me = interaction.guild.me
+
+        if bot_member is not None:
+
+            permissions = channel.permissions_for(bot_member)
+
+            if not permissions.manage_messages:
+
+                await interaction.response.send_message(
+                    "❌ I cannot automatically delete your "
+                    "screenshot because I don't have "
+                    "**Manage Messages** permission in this ticket.",
+                    ephemeral=True
+                )
+
+                return
+
+            if not permissions.attach_files:
+
+                await interaction.response.send_message(
+                    "❌ I don't have **Attach Files** permission "
+                    "in this ticket.",
+                    ephemeral=True
+                )
+
+                return
 
         # ----------------------------------------------------
         # RESPONSE
@@ -248,46 +277,54 @@ class FFStatsScreenshotView(
 
             return
 
-        # ----------------------------------------------------
-        # SAVE URL BEFORE DELETE
-        # ----------------------------------------------------
-        # Discord CDN URL remains usable after the message
-        # is deleted in normal cases.
+        # ====================================================
+        # DOWNLOAD ORIGINAL IMAGE FIRST
+        # ====================================================
+        # IMPORTANT:
+        # We do NOT rely on the user's Discord CDN URL.
+        #
+        # Bot downloads the attachment and uploads it again
+        # in its own message.
+        #
+        # Then the original user message is deleted.
+        # ====================================================
 
-        image_url = image_attachment.url
         image_filename = image_attachment.filename
         image_size = image_attachment.size
 
-        # ====================================================
-        # DELETE USER'S ORIGINAL SCREENSHOT MESSAGE
-        # ====================================================
-
         try:
 
-            await message.delete(
-                reason="AFF-ARMY screenshot upload processed"
+            bot_file = await image_attachment.to_file(
+                filename=image_filename
             )
 
-        except discord.Forbidden:
+        except discord.HTTPException as e:
 
-            # Bot doesn't have Manage Messages
+            print(
+                f"[FF SCREENSHOT DOWNLOAD ERROR] {e}",
+                flush=True
+            )
+
             await channel.send(
-                "⚠️ Screenshot received, but I cannot delete "
-                "your original upload because I don't have "
-                "**Manage Messages** permission."
+                "❌ I received your screenshot, but I could "
+                "not process the image. Please try again."
             )
 
-        except discord.NotFound:
-
-            # Message was already deleted
-            pass
+            return
 
         except Exception as e:
 
             print(
-                f"[FF SCREENSHOT DELETE ERROR] {e}",
+                f"[FF SCREENSHOT FILE ERROR] {e}",
                 flush=True
             )
+
+            await channel.send(
+                "❌ An error occurred while processing your "
+                "screenshot. Please try again."
+            )
+
+            return
 
         # ====================================================
         # SCREENSHOT RECEIVED EMBED
@@ -320,11 +357,11 @@ class FFStatsScreenshotView(
         )
 
         # ----------------------------------------------------
-        # SHOW IMAGE
+        # SHOW IMAGE FROM BOT'S OWN ATTACHMENT
         # ----------------------------------------------------
 
         embed.set_image(
-            url=image_url
+            url=f"attachment://{image_filename}"
         )
 
         embed.set_footer(
@@ -332,12 +369,106 @@ class FFStatsScreenshotView(
         )
 
         # ====================================================
-        # BOT MESSAGE
+        # SEND BOT MESSAGE FIRST
+        # ====================================================
+        # This guarantees the screenshot is safely stored in
+        # the bot's message before deleting the user's message.
         # ====================================================
 
-        await channel.send(
-            embed=embed
-        )
+        try:
+
+            await channel.send(
+                embed=embed,
+                file=bot_file
+            )
+
+        except discord.Forbidden:
+
+            await channel.send(
+                "❌ I received the screenshot but Discord "
+                "did not allow me to upload it.\n\n"
+                "Please check the bot's **Attach Files** "
+                "permission."
+            )
+
+            return
+
+        except discord.HTTPException as e:
+
+            print(
+                f"[FF SCREENSHOT SEND ERROR] {e}",
+                flush=True
+            )
+
+            await channel.send(
+                "❌ I could not display the screenshot. "
+                "Please try uploading it again."
+            )
+
+            return
+
+        except Exception as e:
+
+            print(
+                f"[FF SCREENSHOT SEND ERROR] {e}",
+                flush=True
+            )
+
+            return
+
+        # ====================================================
+        # DELETE USER'S ORIGINAL SCREENSHOT MESSAGE
+        # ====================================================
+
+        try:
+
+            await message.delete(
+                reason="AFF-ARMY screenshot upload processed"
+            )
+
+            print(
+                f"[FF SCREENSHOT] Original screenshot "
+                f"message deleted successfully | "
+                f"User: {message.author} | "
+                f"Channel: #{channel.name}",
+                flush=True
+            )
+
+        except discord.Forbidden:
+
+            print(
+                "[FF SCREENSHOT] DELETE FAILED: "
+                "Bot does not have Manage Messages permission.",
+                flush=True
+            )
+
+            await channel.send(
+                "⚠️ Screenshot was received successfully, "
+                "but I could not delete the original upload.\n\n"
+                "Please make sure the bot has "
+                "**Manage Messages** permission."
+            )
+
+        except discord.NotFound:
+
+            print(
+                "[FF SCREENSHOT] Original message was already deleted.",
+                flush=True
+            )
+
+        except discord.HTTPException as e:
+
+            print(
+                f"[FF SCREENSHOT DELETE HTTP ERROR] {e}",
+                flush=True
+            )
+
+        except Exception as e:
+
+            print(
+                f"[FF SCREENSHOT DELETE ERROR] {e}",
+                flush=True
+            )
 
 
 # ============================================================
@@ -651,59 +782,38 @@ class FFStatsModal(
 ):
 
     ff_uid = discord.ui.TextInput(
-
         label="Free Fire UID",
-
         placeholder="Enter your Free Fire UID",
-
         required=True,
-
         max_length=30
     )
 
     kd = discord.ui.TextInput(
-
         label="KD / Kills",
-
         placeholder="Example: 3.45 KD",
-
         required=True,
-
         max_length=50
     )
 
     headshot = discord.ui.TextInput(
-
         label="Headshot Rate",
-
         placeholder="Example: 28.5%",
-
         required=True,
-
         max_length=50
     )
 
     rank = discord.ui.TextInput(
-
         label="Current Rank",
-
         placeholder="Example: Grandmaster / Heroic",
-
         required=True,
-
         max_length=100
     )
 
     requirement = discord.ui.TextInput(
-
         label="What do you need?",
-
         placeholder="Example: 1v4 / Profile Check / Tournament",
-
         style=discord.TextStyle.paragraph,
-
         required=True,
-
         max_length=500
     )
 
@@ -1659,3 +1769,4 @@ async def setup(bot):
     bot.add_view(
         FFStatsScreenshotView(bot)
     )
+
