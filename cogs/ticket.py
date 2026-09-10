@@ -101,6 +101,19 @@ class FFStatsScreenshotView(
         channel = interaction.channel
 
         # ----------------------------------------------------
+        # MAKE SURE THIS IS A TEXT CHANNEL
+        # ----------------------------------------------------
+
+        if not isinstance(channel, discord.TextChannel):
+
+            await interaction.response.send_message(
+                "❌ Screenshot upload is not available here.",
+                ephemeral=True
+            )
+
+            return
+
+        # ----------------------------------------------------
         # GET TICKET TOPIC
         # ----------------------------------------------------
 
@@ -168,7 +181,7 @@ class FFStatsScreenshotView(
             if not message.attachments:
                 return False
 
-            # Check image extension
+            # Check supported image extension
             for attachment in message.attachments:
 
                 filename = attachment.filename.lower()
@@ -181,9 +194,14 @@ class FFStatsScreenshotView(
                         ".webp"
                     )
                 ):
+
                     return True
 
             return False
+
+        # ----------------------------------------------------
+        # WAIT
+        # ----------------------------------------------------
 
         try:
 
@@ -228,26 +246,62 @@ class FFStatsScreenshotView(
 
         if image_attachment is None:
 
-            await channel.send(
-                f"❌ {interaction.user.mention}, "
-                "that file is not a supported image."
-            )
-
             return
 
         # ----------------------------------------------------
-        # SCREENSHOT RECEIVED EMBED
+        # SAVE URL BEFORE DELETE
         # ----------------------------------------------------
+        # Discord CDN URL remains usable after the message
+        # is deleted in normal cases.
+
+        image_url = image_attachment.url
+        image_filename = image_attachment.filename
+        image_size = image_attachment.size
+
+        # ====================================================
+        # DELETE USER'S ORIGINAL SCREENSHOT MESSAGE
+        # ====================================================
+
+        try:
+
+            await message.delete(
+                reason="AFF-ARMY screenshot upload processed"
+            )
+
+        except discord.Forbidden:
+
+            # Bot doesn't have Manage Messages
+            await channel.send(
+                "⚠️ Screenshot received, but I cannot delete "
+                "your original upload because I don't have "
+                "**Manage Messages** permission."
+            )
+
+        except discord.NotFound:
+
+            # Message was already deleted
+            pass
+
+        except Exception as e:
+
+            print(
+                f"[FF SCREENSHOT DELETE ERROR] {e}",
+                flush=True
+            )
+
+        # ====================================================
+        # SCREENSHOT RECEIVED EMBED
+        # ====================================================
 
         embed = discord.Embed(
 
-            title="📸 FREE FIRE SCREENSHOT RECEIVED",
+            title="📸 SCREENSHOT RECEIVED",
 
             description=(
-                f"✅ Screenshot uploaded by "
+                f"✅ Screenshot successfully received from "
                 f"{interaction.user.mention}\n\n"
                 "🟢 **Status:** `RECEIVED`\n"
-                "🛡️ Staff can now review the screenshot."
+                "🛡️ **Staff can now review the screenshot.**"
             ),
 
             color=discord.Color.green()
@@ -255,23 +309,31 @@ class FFStatsScreenshotView(
 
         embed.add_field(
             name="📁 FILE",
-            value=f"`{image_attachment.filename}`",
+            value=f"`{image_filename}`",
             inline=True
         )
 
         embed.add_field(
             name="📦 SIZE",
-            value=f"`{image_attachment.size / 1024:.1f} KB`",
+            value=f"`{image_size / 1024:.1f} KB`",
             inline=True
         )
 
+        # ----------------------------------------------------
+        # SHOW IMAGE
+        # ----------------------------------------------------
+
         embed.set_image(
-            url=image_attachment.url
+            url=image_url
         )
 
         embed.set_footer(
             text="AFF-ARMY • FF Player Profile Support"
         )
+
+        # ====================================================
+        # BOT MESSAGE
+        # ====================================================
 
         await channel.send(
             embed=embed
@@ -463,7 +525,9 @@ async def create_ticket_channel(
                 "button below.\n\n"
                 "After clicking it, send your latest "
                 "**Free Fire profile/stats screenshot** "
-                "as an attachment."
+                "as an attachment.\n\n"
+                "🗑️ Your original upload will automatically "
+                "be deleted after it is received."
             ),
             inline=False
         )
@@ -514,9 +578,9 @@ async def create_ticket_channel(
         view=TicketControls()
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # FF PLAYER STATS SCREENSHOT BUTTON
-    # --------------------------------------------------------
+    # ========================================================
 
     if ticket_type == "FF Player Stats":
 
@@ -525,12 +589,23 @@ async def create_ticket_channel(
             title="📸 FREE FIRE PROFILE SCREENSHOT",
 
             description=(
-                "Please upload your **latest Free Fire profile/"
-                "stats screenshot**.\n\n"
-                "📌 Click the button below.\n"
-                "📤 Then send your screenshot as an attachment.\n\n"
+                "Please upload your **latest Free Fire "
+                "profile/stats screenshot**.\n\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "📌 **STEP 1**\n"
+                "Click **📸 Upload Screenshot / Proof**.\n\n"
+                "📤 **STEP 2**\n"
+                "Send your screenshot as an attachment "
+                "in this ticket.\n\n"
+                "🗑️ **STEP 3**\n"
+                "Your original screenshot message will be "
+                "automatically deleted.\n\n"
+                "✅ **STEP 4**\n"
+                "Bot will show **📸 SCREENSHOT RECEIVED** "
+                "with your screenshot.\n\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 "✅ PNG / JPG / JPEG / WEBP supported.\n"
-                "⏱️ You will have 5 minutes to upload."
+                "⏱️ You have **5 minutes** to upload."
             ),
 
             color=discord.Color.blue()
@@ -1584,4 +1659,3 @@ async def setup(bot):
     bot.add_view(
         FFStatsScreenshotView(bot)
     )
-
