@@ -23,6 +23,7 @@ async def get_ticket_category(guild: discord.Guild):
     )
 
     if category is None:
+
         category = await guild.create_category(
             TICKET_CATEGORY_NAME,
             reason="AFF-ARMY Ticket System"
@@ -66,18 +67,24 @@ def is_staff(member: discord.Member):
 
 
 # ============================================================
-# FF STATS SCREENSHOT UPLOAD BUTTON
+# FF STATS SCREENSHOT UPLOAD VIEW
 # ============================================================
 
 class FFStatsScreenshotView(
     discord.ui.View
 ):
 
-    def __init__(self):
+    def __init__(self, bot):
 
         super().__init__(
             timeout=None
         )
+
+        self.bot = bot
+
+    # ========================================================
+    # UPLOAD SCREENSHOT BUTTON
+    # ========================================================
 
     @discord.ui.button(
         label="Upload Screenshot / Proof",
@@ -91,7 +98,13 @@ class FFStatsScreenshotView(
         button: discord.ui.Button
     ):
 
-        topic = interaction.channel.topic or ""
+        channel = interaction.channel
+
+        # ----------------------------------------------------
+        # GET TICKET TOPIC
+        # ----------------------------------------------------
+
+        topic = channel.topic or ""
 
         owner_id = None
 
@@ -116,19 +129,152 @@ class FFStatsScreenshotView(
         if owner_id != interaction.user.id:
 
             await interaction.response.send_message(
-                "❌ Only the **ticket owner** can use this upload option.",
+                "❌ Only the **ticket owner** can upload "
+                "the Free Fire screenshot.",
                 ephemeral=True
             )
 
             return
 
+        # ----------------------------------------------------
+        # RESPONSE
+        # ----------------------------------------------------
+
         await interaction.response.send_message(
-            "📸 **Screenshot / Proof Upload**\n\n"
-            "Please upload your **Free Fire profile/stats screenshot** "
-            "in this ticket.\n\n"
-            "✅ PNG / JPG / JPEG supported.\n"
-            "📌 You can drag & drop the screenshot here.",
+            "📸 **SCREENSHOT UPLOAD READY**\n\n"
+            "Please send your **Free Fire profile/stats "
+            "screenshot** in this ticket now.\n\n"
+            "✅ Supported formats: PNG, JPG, JPEG, WEBP\n"
+            "⏱️ Upload window: **5 minutes**\n\n"
+            "⚠️ Send the screenshot as an **attachment**.",
             ephemeral=True
+        )
+
+        # ----------------------------------------------------
+        # WAIT FOR IMAGE
+        # ----------------------------------------------------
+
+        def check(message: discord.Message):
+
+            # Same channel
+            if message.channel.id != channel.id:
+                return False
+
+            # Same user
+            if message.author.id != interaction.user.id:
+                return False
+
+            # Must contain attachment
+            if not message.attachments:
+                return False
+
+            # Check image extension
+            for attachment in message.attachments:
+
+                filename = attachment.filename.lower()
+
+                if filename.endswith(
+                    (
+                        ".png",
+                        ".jpg",
+                        ".jpeg",
+                        ".webp"
+                    )
+                ):
+                    return True
+
+            return False
+
+        try:
+
+            message = await self.bot.wait_for(
+                "message",
+                check=check,
+                timeout=300
+            )
+
+        except asyncio.TimeoutError:
+
+            await channel.send(
+                f"⏱️ {interaction.user.mention}, "
+                "the **screenshot upload window expired**.\n\n"
+                "Click **📸 Upload Screenshot / Proof** "
+                "again if you still need to upload it."
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # FIND IMAGE
+        # ----------------------------------------------------
+
+        image_attachment = None
+
+        for attachment in message.attachments:
+
+            filename = attachment.filename.lower()
+
+            if filename.endswith(
+                (
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".webp"
+                )
+            ):
+
+                image_attachment = attachment
+                break
+
+        if image_attachment is None:
+
+            await channel.send(
+                f"❌ {interaction.user.mention}, "
+                "that file is not a supported image."
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # SCREENSHOT RECEIVED EMBED
+        # ----------------------------------------------------
+
+        embed = discord.Embed(
+
+            title="📸 FREE FIRE SCREENSHOT RECEIVED",
+
+            description=(
+                f"✅ Screenshot uploaded by "
+                f"{interaction.user.mention}\n\n"
+                "🟢 **Status:** `RECEIVED`\n"
+                "🛡️ Staff can now review the screenshot."
+            ),
+
+            color=discord.Color.green()
+        )
+
+        embed.add_field(
+            name="📁 FILE",
+            value=f"`{image_attachment.filename}`",
+            inline=True
+        )
+
+        embed.add_field(
+            name="📦 SIZE",
+            value=f"`{image_attachment.size / 1024:.1f} KB`",
+            inline=True
+        )
+
+        embed.set_image(
+            url=image_attachment.url
+        )
+
+        embed.set_footer(
+            text="AFF-ARMY • FF Player Profile Support"
+        )
+
+        await channel.send(
+            embed=embed
         )
 
 
@@ -153,7 +299,10 @@ async def create_ticket_channel(
 
     for channel in guild.text_channels:
 
-        if channel.topic and f"Ticket Owner ID: {user.id}" in channel.topic:
+        if (
+            channel.topic
+            and f"Ticket Owner ID: {user.id}" in channel.topic
+        ):
 
             await interaction.response.send_message(
                 "❌ You already have an open ticket.\n"
@@ -217,8 +366,16 @@ async def create_ticket_channel(
     # --------------------------------------------------------
 
     clean_name = ticket_type.lower()
-    clean_name = clean_name.replace(" ", "-")
-    clean_name = clean_name.replace("/", "-")
+
+    clean_name = clean_name.replace(
+        " ",
+        "-"
+    )
+
+    clean_name = clean_name.replace(
+        "/",
+        "-"
+    )
 
     channel_name = f"{clean_name}-{user.id}"
 
@@ -279,6 +436,10 @@ async def create_ticket_channel(
         inline=True
     )
 
+    # --------------------------------------------------------
+    # CUSTOM FIELDS
+    # --------------------------------------------------------
+
     if ticket_fields:
 
         for field_name, field_value in ticket_fields:
@@ -289,14 +450,34 @@ async def create_ticket_channel(
                 inline=False
             )
 
-    embed.add_field(
-        name="📸 SCREENSHOT / PROOF",
-        value=(
-            "Please upload your **screenshot/proof below**.\n"
-            "You can simply drag & drop the image into this ticket."
-        ),
-        inline=False
-    )
+    # --------------------------------------------------------
+    # SCREENSHOT INFO
+    # --------------------------------------------------------
+
+    if ticket_type == "FF Player Stats":
+
+        embed.add_field(
+            name="📸 SCREENSHOT / PROOF",
+            value=(
+                "Please click the **📸 Upload Screenshot / Proof** "
+                "button below.\n\n"
+                "After clicking it, send your latest "
+                "**Free Fire profile/stats screenshot** "
+                "as an attachment."
+            ),
+            inline=False
+        )
+
+    else:
+
+        embed.add_field(
+            name="📸 SCREENSHOT / PROOF",
+            value=(
+                "You can upload screenshots/proof directly "
+                "inside this private ticket."
+            ),
+            inline=False
+        )
 
     embed.set_footer(
         text="AFF-ARMY • Professional Support System"
@@ -335,7 +516,6 @@ async def create_ticket_channel(
 
     # --------------------------------------------------------
     # FF PLAYER STATS SCREENSHOT BUTTON
-    # ONLY FOR FF PLAYER STATS
     # --------------------------------------------------------
 
     if ticket_type == "FF Player Stats":
@@ -345,11 +525,12 @@ async def create_ticket_channel(
             title="📸 FREE FIRE PROFILE SCREENSHOT",
 
             description=(
-                "Please upload your **latest Free Fire profile/stats "
-                "screenshot**.\n\n"
-                "📌 Click the button below for upload instructions.\n\n"
-                "You can then **drag & drop your screenshot directly "
-                "into this ticket**."
+                "Please upload your **latest Free Fire profile/"
+                "stats screenshot**.\n\n"
+                "📌 Click the button below.\n"
+                "📤 Then send your screenshot as an attachment.\n\n"
+                "✅ PNG / JPG / JPEG / WEBP supported.\n"
+                "⏱️ You will have 5 minutes to upload."
             ),
 
             color=discord.Color.blue()
@@ -361,7 +542,9 @@ async def create_ticket_channel(
 
         await channel.send(
             embed=screenshot_embed,
-            view=FFStatsScreenshotView()
+            view=FFStatsScreenshotView(
+                interaction.client
+            )
         )
 
     # --------------------------------------------------------
@@ -1196,6 +1379,10 @@ class ClosedTicketControls(
 
                 pass
 
+        # ----------------------------------------------------
+        # RESTORE USER ACCESS
+        # ----------------------------------------------------
+
         if owner_id:
 
             user = interaction.guild.get_member(
@@ -1218,6 +1405,10 @@ class ClosedTicketControls(
 
                     embed_links=True
                 )
+
+        # ----------------------------------------------------
+        # REOPEN EMBED
+        # ----------------------------------------------------
 
         embed = discord.Embed(
 
@@ -1391,5 +1582,6 @@ async def setup(bot):
     )
 
     bot.add_view(
-        FFStatsScreenshotView()
+        FFStatsScreenshotView(bot)
     )
+
