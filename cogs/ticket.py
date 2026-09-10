@@ -65,6 +65,77 @@ def is_staff(member: discord.Member):
     )
 
 
+# ============================================================
+# FF STATS SCREENSHOT UPLOAD BUTTON
+# ============================================================
+
+class FFStatsScreenshotView(
+    discord.ui.View
+):
+
+    def __init__(self):
+
+        super().__init__(
+            timeout=None
+        )
+
+    @discord.ui.button(
+        label="Upload Screenshot / Proof",
+        emoji="📸",
+        style=discord.ButtonStyle.primary,
+        custom_id="hsl_ff_stats_screenshot"
+    )
+    async def upload_screenshot(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        topic = interaction.channel.topic or ""
+
+        owner_id = None
+
+        if "Ticket Owner ID:" in topic:
+
+            try:
+
+                owner_id = int(
+                    topic.split("Ticket Owner ID:")[1]
+                    .split("|")[0]
+                    .strip()
+                )
+
+            except Exception:
+
+                owner_id = None
+
+        # ----------------------------------------------------
+        # ONLY TICKET OWNER
+        # ----------------------------------------------------
+
+        if owner_id != interaction.user.id:
+
+            await interaction.response.send_message(
+                "❌ Only the **ticket owner** can use this upload option.",
+                ephemeral=True
+            )
+
+            return
+
+        await interaction.response.send_message(
+            "📸 **Screenshot / Proof Upload**\n\n"
+            "Please upload your **Free Fire profile/stats screenshot** "
+            "in this ticket.\n\n"
+            "✅ PNG / JPG / JPEG supported.\n"
+            "📌 You can drag & drop the screenshot here.",
+            ephemeral=True
+        )
+
+
+# ============================================================
+# CREATE TICKET CHANNEL
+# ============================================================
+
 async def create_ticket_channel(
     interaction: discord.Interaction,
     ticket_type: str,
@@ -151,7 +222,6 @@ async def create_ticket_channel(
 
     channel_name = f"{clean_name}-{user.id}"
 
-    # Discord channel name max is 100 chars
     channel_name = channel_name[:95]
 
     # --------------------------------------------------------
@@ -252,7 +322,7 @@ async def create_ticket_channel(
     )
 
     # --------------------------------------------------------
-    # SEND
+    # SEND MAIN TICKET
     # --------------------------------------------------------
 
     await channel.send(
@@ -263,12 +333,52 @@ async def create_ticket_channel(
         view=TicketControls()
     )
 
+    # --------------------------------------------------------
+    # FF PLAYER STATS SCREENSHOT BUTTON
+    # ONLY FOR FF PLAYER STATS
+    # --------------------------------------------------------
+
+    if ticket_type == "FF Player Stats":
+
+        screenshot_embed = discord.Embed(
+
+            title="📸 FREE FIRE PROFILE SCREENSHOT",
+
+            description=(
+                "Please upload your **latest Free Fire profile/stats "
+                "screenshot**.\n\n"
+                "📌 Click the button below for upload instructions.\n\n"
+                "You can then **drag & drop your screenshot directly "
+                "into this ticket**."
+            ),
+
+            color=discord.Color.blue()
+        )
+
+        screenshot_embed.set_footer(
+            text="AFF-ARMY • FF Player Profile Support"
+        )
+
+        await channel.send(
+            embed=screenshot_embed,
+            view=FFStatsScreenshotView()
+        )
+
+    # --------------------------------------------------------
+    # STAFF EMBED
+    # --------------------------------------------------------
+
     await channel.send(
         embed=staff_embed
     )
 
+    # --------------------------------------------------------
+    # CONFIRMATION
+    # --------------------------------------------------------
+
     await interaction.response.send_message(
-        f"✅ Your ticket has been created!\n🎫 {channel.mention}",
+        f"✅ Your ticket has been created!\n"
+        f"🎫 {channel.mention}",
         ephemeral=True
     )
 
@@ -277,7 +387,10 @@ async def create_ticket_channel(
 # FF PLAYER STATS MODAL
 # ============================================================
 
-class FFStatsModal(discord.ui.Modal, title="🎮 Free Fire Player Profile"):
+class FFStatsModal(
+    discord.ui.Modal,
+    title="🎮 Free Fire Player Profile"
+):
 
     ff_uid = discord.ui.TextInput(
 
@@ -393,7 +506,10 @@ class FFStatsModal(discord.ui.Modal, title="🎮 Free Fire Player Profile"):
 # 1V4 MODAL
 # ============================================================
 
-class FF1v4Modal(discord.ui.Modal, title="🔥 1v4 Challenge Request"):
+class FF1v4Modal(
+    discord.ui.Modal,
+    title="🔥 1v4 Challenge Request"
+):
 
     ff_uid = discord.ui.TextInput(
         label="Free Fire UID",
@@ -474,7 +590,10 @@ class FF1v4Modal(discord.ui.Modal, title="🔥 1v4 Challenge Request"):
 # 1V1 MODAL
 # ============================================================
 
-class FF1v1Modal(discord.ui.Modal, title="⚔️ 1v1 Challenge Request"):
+class FF1v1Modal(
+    discord.ui.Modal,
+    title="⚔️ 1v1 Challenge Request"
+):
 
     ff_uid = discord.ui.TextInput(
         label="Free Fire UID",
@@ -562,7 +681,7 @@ class TournamentModal(
 
     ff_uid = discord.ui.TextInput(
         label="Free Fire UID",
-        placeholder="Enter your FF UID",
+        placeholder="Enter your Free Fire UID",
         required=True,
         max_length=30
     )
@@ -969,6 +1088,7 @@ class TicketControls(
                 )
 
             except Exception:
+
                 owner_id = None
 
         # ----------------------------------------------------
@@ -1073,6 +1193,7 @@ class ClosedTicketControls(
                 )
 
             except Exception:
+
                 pass
 
         if owner_id:
@@ -1185,6 +1306,7 @@ class Ticket(
             title="🎫 AFF-ARMY SUPPORT CENTER",
 
             description=(
+
                 "## ⚡ WELCOME TO AFF-ARMY\n\n"
 
                 "Need help with **Free Fire, challenges, "
@@ -1266,4 +1388,8 @@ async def setup(bot):
 
     bot.add_view(
         ClosedTicketControls()
+    )
+
+    bot.add_view(
+        FFStatsScreenshotView()
     )
